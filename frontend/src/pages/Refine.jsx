@@ -35,7 +35,7 @@ export default function Refine() {
     try {
       const response = await aiApi.getPrompts()
       if (response.code === 200) {
-        setPrompts(response.data)
+        setPrompts(response.data.prompts || response.data)
         // 默认选中第一个
         if (response.data.length > 0) {
           setSelectedPromptId(response.data[0].id)

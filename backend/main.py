@@ -345,7 +345,7 @@ async def get_prompts():
         return ApiResponse(
             code=200,
             message="success",
-            data=prompts
+            data={"prompts": prompts}  # 包装成字典
         )
     except Exception as e:
         logger.error(f"获取提示词失败: {e}", exc_info=True)
