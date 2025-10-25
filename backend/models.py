@@ -47,7 +47,7 @@ class Topic(Base):
     # 复合索引：用于常见的查询组合
     __table_args__ = (
         Index('idx_material_created', 'material_id', 'created_at'),
-        Index('idx_source_created', 'source_type', 'created_at'),
+        Index('idx_topic_source_created', 'source_type', 'created_at'),
     )
 
 class Config(Base):
