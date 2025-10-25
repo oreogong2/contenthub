@@ -302,7 +302,7 @@ export default function Materials() {
       ) : materials.length === 0 ? (
         <Empty
           description={
-            searchKeyword || sourceFilter || dateRange
+            searchKeyword || sourceFilter
               ? '没有找到匹配的素材'
               : '还没有添加任何素材'
           }
