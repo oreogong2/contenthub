@@ -439,6 +439,66 @@ async def create_topic(
         logger.error(f"创建选题失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
+@app.get("/api/topics/{topic_id}", response_model=ApiResponse)
+async def get_topic_detail(
+    topic_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    获取选题详情
+    
+    包含完整的选题信息和关联的原始素材
+    """
+    logger.info(f"获取选题详情: id={topic_id}")
+    
+    try:
+        from models import Topic
+        
+        # 查询选题
+        topic = db.query(Topic).filter(Topic.id == topic_id).first()
+        
+        if not topic:
+            logger.warning(f"选题不存在: id={topic_id}")
+            raise HTTPException(status_code=404, detail="选题不存在")
+        
+        # 查询关联的素材
+        material = crud.get_material(db, topic.material_id)
+        
+        # 格式化返回数据
+        topic_data = {
+            "id": topic.id,
+            "material_id": topic.material_id,
+            "title": topic.title,
+            "refined_content": topic.refined_content,
+            "prompt_name": topic.prompt_name,
+            "tags": json.loads(topic.tags) if topic.tags else [],
+            "source_type": topic.source_type,
+            "created_at": topic.created_at.isoformat(),
+            "updated_at": topic.updated_at.isoformat() if topic.updated_at else None,
+            "material": {
+                "id": material.id,
+                "title": material.title,
+                "content": material.content,
+                "source_type": material.source_type,
+                "file_name": material.file_name,
+                "created_at": material.created_at.isoformat()
+            } if material else None
+        }
+        
+        logger.info(f"选题详情获取成功: id={topic_id}")
+        
+        return ApiResponse(
+            code=200,
+            message="success",
+            data=topic_data
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取选题详情失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
 @app.get("/api/topics", response_model=ApiResponse)
 async def get_topics(
     page: int = 1,

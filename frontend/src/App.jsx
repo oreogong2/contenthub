@@ -8,6 +8,7 @@ import Home from './pages/Home'
 import Refine from './pages/Refine'
 import Save from './pages/Save'
 import Topics from './pages/Topics'
+import TopicDetail from './pages/TopicDetail'
 import './App.css'
 
 const { Header, Content } = Layout
@@ -133,6 +134,7 @@ function App() {
                 <Route path="/refine" element={<Refine />} />
                 <Route path="/save" element={<Save />} />
                 <Route path="/topics" element={<Topics />} />
+                <Route path="/topics/:id" element={<TopicDetail />} />
                 <Route path="/settings" element={<PlaceholderPage title="设置" taskNumber="10" />} />
               </Routes>
             </div>

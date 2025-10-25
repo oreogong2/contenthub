@@ -212,9 +212,11 @@ export default function Topics() {
                 borderRadius: 12,
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 background: 'rgba(17, 24, 39, 0.6)',
-                backdropFilter: 'blur(10px)'
+                backdropFilter: 'blur(10px)',
+                cursor: 'pointer'
               }}
               bodyStyle={{ padding: 24 }}
+              onClick={() => navigate(`/topics/${topic.id}`)}
             >
               <div>
                 {/* 标题 */}
@@ -276,7 +278,11 @@ export default function Topics() {
                     )}
                   </Space>
                   
-                  <Button type="link" style={{ padding: 0 }}>
+                  <Button 
+                    type="link" 
+                    style={{ padding: 0 }}
+                    onClick={() => navigate(`/topics/${topic.id}`)}
+                  >
                     查看详情 →
                   </Button>
                 </div>
