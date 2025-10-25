@@ -4,15 +4,14 @@
  */
 
 import { useState, useEffect } from 'react'
-import { Card, Input, Button, Space, Spin, Empty, message, Checkbox, Tag, Select, DatePicker } from 'antd'
-import { SearchOutlined, ThunderboltOutlined, ReloadOutlined, FilterOutlined } from '@ant-design/icons'
+import { Card, Input, Button, Space, Spin, Empty, message, Checkbox, Tag, Select, Modal } from 'antd'
+import { SearchOutlined, ThunderboltOutlined, ClearOutlined, FilterOutlined, EyeOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { materialApi } from '../api'
 import useStore from '../store/useStore'
-import dayjs from 'dayjs'
 
 const { Search } = Input
-const { RangePicker } = DatePicker
+const { TextArea } = Input
 
 // 来源类型映射
 const SOURCE_TYPES = {
@@ -37,8 +36,10 @@ export default function Materials() {
   // 筛选条件
   const [searchKeyword, setSearchKeyword] = useState('')
   const [sourceFilter, setSourceFilter] = useState(undefined)
-  const [dateRange, setDateRange] = useState(null)
   const [showFilters, setShowFilters] = useState(false)
+  
+  // 查看素材详情
+  const [viewingMaterial, setViewingMaterial] = useState(null)
 
   // 加载素材列表
   const loadMaterials = async () => {
@@ -61,17 +62,7 @@ export default function Materials() {
       const response = await materialApi.getList(params)
       
       if (response.code === 200) {
-        let items = response.data.items || []
-        
-        // 前端按日期范围筛选（如果后端不支持）
-        if (dateRange && dateRange.length === 2) {
-          const [start, end] = dateRange
-          items = items.filter(item => {
-            const itemDate = dayjs(item.created_at)
-            return itemDate.isAfter(start.startOf('day')) && itemDate.isBefore(end.endOf('day'))
-          })
-        }
-        
+        const items = response.data.items || []
         setMaterials(items)
         setTotal(response.data.total || items.length)
       } else {
@@ -97,12 +88,12 @@ export default function Materials() {
     loadMaterials()
   }
 
-  // 重置筛选
-  const handleReset = () => {
+  // 清除筛选
+  const handleClearFilters = () => {
     setSearchKeyword('')
     setSourceFilter(undefined)
-    setDateRange(null)
     setPage(1)
+    message.success('筛选条件已清除')
     setTimeout(() => loadMaterials(), 100)
   }
 
@@ -150,19 +141,31 @@ export default function Materials() {
 
   // 格式化日期
   const formatDate = (isoString) => {
-    const date = dayjs(isoString)
-    const now = dayjs()
-    const diff = now.diff(date, 'day')
+    const date = new Date(isoString)
+    const now = new Date()
+    const diff = Math.floor((now - date) / (1000 * 60 * 60 * 24))
+    
+    const hours = date.getHours().toString().padStart(2, '0')
+    const minutes = date.getMinutes().toString().padStart(2, '0')
+    const timeStr = `${hours}:${minutes}`
     
     if (diff === 0) {
-      return '今天 ' + date.format('HH:mm')
+      return `今天 ${timeStr}`
     } else if (diff === 1) {
-      return '昨天 ' + date.format('HH:mm')
+      return `昨天 ${timeStr}`
     } else if (diff < 7) {
-      return diff + ' 天前'
+      return `${diff} 天前`
     } else {
-      return date.format('MM-DD HH:mm')
+      const month = (date.getMonth() + 1).toString().padStart(2, '0')
+      const day = date.getDate().toString().padStart(2, '0')
+      return `${month}-${day} ${timeStr}`
     }
+  }
+  
+  // 查看素材详情
+  const handleViewMaterial = (material, e) => {
+    e.stopPropagation() // 阻止卡片点击事件
+    setViewingMaterial(material)
   }
 
   // 加载更多
@@ -211,10 +214,11 @@ export default function Materials() {
             <Space>
               <Button
                 size="large"
-                icon={<ReloadOutlined />}
-                onClick={handleReset}
+                icon={<ClearOutlined />}
+                onClick={handleClearFilters}
+                disabled={!searchKeyword && !sourceFilter}
               >
-                重置
+                清除筛选
               </Button>
               <Button
                 type="primary"
@@ -262,23 +266,10 @@ export default function Materials() {
                   />
                 </div>
 
-                {/* 日期范围筛选 */}
-                <div>
-                  <div style={{ marginBottom: 8, color: '#888', fontSize: 13 }}>创建时间</div>
-                  <RangePicker
-                    size="large"
-                    value={dateRange}
-                    onChange={setDateRange}
-                    style={{ width: 280 }}
-                    placeholder={['开始日期', '结束日期']}
-                  />
-                </div>
-
                 <div style={{ paddingTop: 24 }}>
                   <Button 
                     type="primary" 
                     onClick={handleSearch}
-                    style={{ marginRight: 8 }}
                   >
                     应用筛选
                   </Button>
@@ -347,11 +338,9 @@ export default function Materials() {
                       : '1px solid rgba(255, 255, 255, 0.1)',
                     background: 'rgba(17, 24, 39, 0.6)',
                     backdropFilter: 'blur(10px)',
-                    cursor: 'pointer',
                     transition: 'all 0.3s'
                   }}
                   bodyStyle={{ padding: 16 }}
-                  onClick={() => handleSelectOne(material.id)}
                 >
                   {/* 复选框和来源标签 */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -397,18 +386,43 @@ export default function Materials() {
                     {material.content}
                   </div>
 
-                  {/* 元信息 */}
+                  {/* 元信息和操作 */}
                   <div style={{ 
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    color: '#888',
-                    fontSize: 12,
                     borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-                    paddingTop: 12
+                    paddingTop: 12,
+                    marginTop: 8
                   }}>
-                    <span>📅 {formatDate(material.created_at)}</span>
-                    <span>📝 {material.content_length} 字</span>
+                    <div style={{ color: '#888', fontSize: 12 }}>
+                      <div>📅 {formatDate(material.created_at)}</div>
+                      <div>📝 {material.content_length} 字</div>
+                    </div>
+                    <Space size="small">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<EyeOutlined />}
+                        onClick={(e) => handleViewMaterial(material, e)}
+                        style={{ color: '#3b82f6' }}
+                      >
+                        查看
+                      </Button>
+                      <Button
+                        type="text"
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleSelectOne(material.id)
+                        }}
+                        style={{ 
+                          color: isSelected ? '#10b981' : '#888'
+                        }}
+                      >
+                        {isSelected ? '✓ 已选' : '选择'}
+                      </Button>
+                    </Space>
                   </div>
                 </Card>
               )
@@ -434,6 +448,88 @@ export default function Materials() {
           )}
         </>
       )}
+
+      {/* 素材详情弹窗 */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{viewingMaterial?.title || '素材详情'}</span>
+            {viewingMaterial && (
+              <Tag color={SOURCE_TYPES[viewingMaterial.source_type]?.color}>
+                {SOURCE_TYPES[viewingMaterial.source_type]?.emoji} {SOURCE_TYPES[viewingMaterial.source_type]?.label}
+              </Tag>
+            )}
+          </div>
+        }
+        open={viewingMaterial !== null}
+        onCancel={() => setViewingMaterial(null)}
+        width={800}
+        footer={[
+          <Button key="close" onClick={() => setViewingMaterial(null)}>
+            关闭
+          </Button>,
+          <Button
+            key="select"
+            type="primary"
+            onClick={() => {
+              if (viewingMaterial) {
+                setCurrentMaterial({
+                  id: viewingMaterial.id,
+                  content: viewingMaterial.content_full,
+                  source_type: viewingMaterial.source_type,
+                  title: viewingMaterial.title
+                })
+                navigate('/refine')
+              }
+            }}
+            style={{
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              border: 'none'
+            }}
+          >
+            AI 提炼此素材
+          </Button>
+        ]}
+      >
+        {viewingMaterial && (
+          <div>
+            {/* 元信息 */}
+            <div style={{ 
+              marginBottom: 16, 
+              padding: 12, 
+              background: 'rgba(59, 130, 246, 0.1)',
+              borderRadius: 8,
+              color: '#888',
+              fontSize: 13
+            }}>
+              <Space split="·">
+                <span>📅 {formatDate(viewingMaterial.created_at)}</span>
+                <span>📝 {viewingMaterial.content_length} 字</span>
+                {viewingMaterial.file_name && (
+                  <span>📄 {viewingMaterial.file_name}</span>
+                )}
+              </Space>
+            </div>
+
+            {/* 完整内容 */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 8, fontWeight: 600, color: '#d1d5db' }}>
+                完整内容
+              </div>
+              <TextArea
+                value={viewingMaterial.content_full}
+                readOnly
+                autoSize={{ minRows: 10, maxRows: 30 }}
+                style={{
+                  background: 'rgba(17, 24, 39, 0.5)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  color: '#d1d5db'
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
