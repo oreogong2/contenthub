@@ -62,7 +62,12 @@ export const materialApi = {
 
 export const aiApi = {
   // 提炼内容
-  refine: (data) => api.post('/ai/refine', data)
+  refine: (data) => api.post('/ai/refine', data, {
+    timeout: 60000 // AI 调用可能需要较长时间
+  }),
+  
+  // 获取提示词列表
+  getPrompts: () => api.get('/prompts')
 }
 
 // ========== 选题相关 API ==========

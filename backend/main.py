@@ -65,6 +65,7 @@ import os
 import uuid
 from pdf_service import extract_text_from_pdf, validate_pdf_file
 from config import settings
+from ai_service import refine_content, get_default_prompts
 
 @app.post("/api/materials/text", response_model=ApiResponse)
 async def create_text_material(
@@ -248,6 +249,106 @@ async def upload_pdf_material(
         raise
     except Exception as e:
         logger.error(f"上传 PDF 失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+# ========== AI 提炼接口 ==========
+
+@app.post("/api/ai/refine", response_model=ApiResponse)
+async def refine_material(
+    material_id: int,
+    prompt_id: int,
+    model: str = "gpt-3.5-turbo",
+    api_key: str = None,
+    db: Session = Depends(get_db)
+):
+    """
+    AI 提炼素材内容
+    
+    使用 AI 根据选择的提示词提炼素材内容
+    """
+    logger.info(f"AI 提炼: material_id={material_id}, prompt_id={prompt_id}, model={model}")
+    
+    try:
+        # 1. 获取素材
+        material = crud.get_material(db, material_id)
+        if not material:
+            logger.warning(f"素材不存在: id={material_id}")
+            raise HTTPException(status_code=404, detail="素材不存在")
+        
+        # 2. 获取提示词
+        prompts = get_default_prompts()
+        prompt_obj = next((p for p in prompts if p['id'] == prompt_id), None)
+        
+        if not prompt_obj:
+            logger.warning(f"提示词不存在: id={prompt_id}")
+            raise HTTPException(status_code=404, detail="提示词不存在")
+        
+        logger.info(f"使用提示词: {prompt_obj['name']}")
+        
+        # 3. 调用 AI 提炼
+        try:
+            result = refine_content(
+                content=material.content,
+                prompt=prompt_obj['content'],
+                model=model,
+                api_key=api_key
+            )
+            
+            logger.info(f"AI 提炼成功: tokens={result['tokens_used']}, cost=${result['cost_usd']}")
+            
+            # 4. 返回结果
+            return ApiResponse(
+                code=200,
+                message="提炼完成",
+                data={
+                    "refined_text": result['refined_text'],
+                    "prompt_name": prompt_obj['name'],
+                    "model_used": result['model_used'],
+                    "tokens_used": result['tokens_used'],
+                    "cost_usd": result['cost_usd'],
+                    "material_id": material_id
+                }
+            )
+            
+        except ValueError as e:
+            logger.error(f"参数错误: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"AI 调用失败: {error_msg}")
+            
+            # 友好的错误提示
+            if "API Key" in error_msg or "api_key" in error_msg.lower():
+                raise HTTPException(status_code=401, detail="API Key 未配置或无效，请在设置中配置")
+            elif "timeout" in error_msg.lower():
+                raise HTTPException(status_code=504, detail="AI 服务超时，请稍后重试")
+            elif "rate limit" in error_msg.lower():
+                raise HTTPException(status_code=429, detail="API 调用频率过高，请稍后重试")
+            else:
+                raise HTTPException(status_code=500, detail=f"AI 提炼失败: {error_msg}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"提炼失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.get("/api/prompts", response_model=ApiResponse)
+async def get_prompts():
+    """
+    获取所有提示词
+    """
+    logger.info("获取提示词列表")
+    
+    try:
+        prompts = get_default_prompts()
+        return ApiResponse(
+            code=200,
+            message="success",
+            data=prompts
+        )
+    except Exception as e:
+        logger.error(f"获取提示词失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
 if __name__ == "__main__":

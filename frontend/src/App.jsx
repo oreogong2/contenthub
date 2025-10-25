@@ -6,6 +6,7 @@ import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react
 import { ConfigProvider, Layout, Menu, theme } from 'antd'
 import Home from './pages/Home'
 import Refine from './pages/Refine'
+import Save from './pages/Save'
 import './App.css'
 
 const { Header, Content } = Layout
@@ -129,6 +130,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/refine" element={<Refine />} />
+                <Route path="/save" element={<Save />} />
                 <Route path="/topics" element={<PlaceholderPage title="我的选题" taskNumber="7" />} />
                 <Route path="/settings" element={<PlaceholderPage title="设置" taskNumber="10" />} />
               </Routes>
