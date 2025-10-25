@@ -351,6 +351,172 @@ async def get_prompts():
         logger.error(f"获取提示词失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
+# ========== 选题管理接口 ==========
+
+from pydantic import BaseModel
+from typing import List
+import json
+
+class TopicCreate(BaseModel):
+    """创建选题的请求模型"""
+    material_id: int
+    title: str
+    refined_content: str
+    prompt_name: str = None
+    tags: List[str]
+    source_type: str = None
+
+@app.post("/api/topics", response_model=ApiResponse)
+async def create_topic(
+    topic: TopicCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    创建选题
+    
+    保存提炼后的内容为选题
+    """
+    logger.info(f"创建选题: title={topic.title}, tags={topic.tags}")
+    
+    try:
+        # 1. 验证标题
+        if not topic.title or not topic.title.strip():
+            logger.warning("标题为空")
+            raise HTTPException(status_code=400, detail="标题不能为空")
+        
+        if len(topic.title) > 200:
+            logger.warning(f"标题过长: {len(topic.title)}")
+            raise HTTPException(status_code=400, detail="标题最长200字")
+        
+        # 2. 验证内容
+        if not topic.refined_content or not topic.refined_content.strip():
+            logger.warning("内容为空")
+            raise HTTPException(status_code=400, detail="内容不能为空")
+        
+        # 3. 验证标签
+        if not topic.tags or len(topic.tags) == 0:
+            logger.warning("标签为空")
+            raise HTTPException(status_code=400, detail="至少需要一个标签")
+        
+        # 4. 验证素材是否存在
+        material = crud.get_material(db, topic.material_id)
+        if not material:
+            logger.warning(f"素材不存在: id={topic.material_id}")
+            raise HTTPException(status_code=404, detail="关联的素材不存在")
+        
+        # 5. 准备数据
+        from models import Topic
+        
+        topic_data = {
+            "material_id": topic.material_id,
+            "title": topic.title.strip(),
+            "refined_content": topic.refined_content.strip(),
+            "prompt_name": topic.prompt_name,
+            "tags": json.dumps(topic.tags, ensure_ascii=False),  # 转为JSON存储
+            "source_type": topic.source_type or material.source_type
+        }
+        
+        # 6. 保存到数据库
+        db_topic = crud.create_topic(db, topic_data)
+        
+        logger.info(f"选题创建成功: id={db_topic.id}")
+        
+        # 7. 返回成功响应
+        return ApiResponse(
+            code=200,
+            message="选题创建成功",
+            data={
+                "id": db_topic.id,
+                "title": db_topic.title,
+                "tags": json.loads(db_topic.tags),
+                "created_at": db_topic.created_at.isoformat()
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"创建选题失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.get("/api/topics", response_model=ApiResponse)
+async def get_topics(
+    page: int = 1,
+    per_page: int = 20,
+    tags: str = None,
+    search: str = None,
+    db: Session = Depends(get_db)
+):
+    """
+    获取选题列表
+    
+    支持分页、标签筛选、关键词搜索
+    """
+    logger.info(f"获取选题列表: page={page}, per_page={per_page}, tags={tags}, search={search}")
+    
+    try:
+        from models import Topic
+        
+        # 构建查询
+        query = db.query(Topic)
+        
+        # 标签筛选
+        if tags:
+            logger.info(f"按标签筛选: {tags}")
+            query = query.filter(Topic.tags.contains(tags))
+        
+        # 搜索
+        if search:
+            logger.info(f"搜索关键词: {search}")
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                (Topic.title.like(search_pattern)) | 
+                (Topic.refined_content.like(search_pattern))
+            )
+        
+        # 按创建时间倒序排列
+        query = query.order_by(Topic.created_at.desc())
+        
+        # 统计总数
+        total = query.count()
+        
+        # 分页
+        offset = (page - 1) * per_page
+        topics = query.offset(offset).limit(per_page).all()
+        
+        # 格式化返回数据
+        topics_data = []
+        for topic in topics:
+            topics_data.append({
+                "id": topic.id,
+                "material_id": topic.material_id,
+                "title": topic.title,
+                "refined_content": topic.refined_content,
+                "prompt_name": topic.prompt_name,
+                "tags": json.loads(topic.tags) if topic.tags else [],
+                "source_type": topic.source_type,
+                "created_at": topic.created_at.isoformat(),
+                "updated_at": topic.updated_at.isoformat() if topic.updated_at else None
+            })
+        
+        logger.info(f"查询成功: 共 {total} 条，返回 {len(topics_data)} 条")
+        
+        return ApiResponse(
+            code=200,
+            message="success",
+            data={
+                "items": topics_data,
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": (total + per_page - 1) // per_page
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"获取选题列表失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
 if __name__ == "__main__":
     import uvicorn
     logger.info("启动 ContentHub API 服务器")
