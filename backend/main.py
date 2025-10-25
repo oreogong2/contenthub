@@ -59,7 +59,7 @@ async def health_check():
 from fastapi import Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from database import get_db
-from schemas import MaterialCreate, MaterialResponse, ApiResponse
+from schemas import MaterialCreate, MaterialResponse, ApiResponse, RefineRequest, BatchRefineRequest, TopicInspirationRequest
 import crud
 import os
 import uuid
@@ -332,47 +332,44 @@ async def upload_pdf_material(
 
 @app.post("/api/ai/refine", response_model=ApiResponse)
 async def refine_material(
-    material_id: int,
-    prompt_id: int,
-    model: str = "gpt-3.5-turbo",
-    api_key: str = None,
+    request: RefineRequest,
     db: Session = Depends(get_db)
 ):
     """
     AI 提炼素材内容
-    
+
     使用 AI 根据选择的提示词提炼素材内容
     """
-    logger.info(f"AI 提炼: material_id={material_id}, prompt_id={prompt_id}, model={model}")
+    logger.info(f"AI 提炼: material_id={request.material_id}, prompt_id={request.prompt_id}, model={request.model}")
     
     try:
         # 1. 获取素材
-        material = crud.get_material(db, material_id)
+        material = crud.get_material(db, request.material_id)
         if not material:
-            logger.warning(f"素材不存在: id={material_id}")
+            logger.warning(f"素材不存在: id={request.material_id}")
             raise HTTPException(status_code=404, detail="素材不存在")
-        
+
         # 2. 获取提示词
         prompts = get_default_prompts()
-        prompt_obj = next((p for p in prompts if p['id'] == prompt_id), None)
-        
+        prompt_obj = next((p for p in prompts if p['id'] == request.prompt_id), None)
+
         if not prompt_obj:
-            logger.warning(f"提示词不存在: id={prompt_id}")
+            logger.warning(f"提示词不存在: id={request.prompt_id}")
             raise HTTPException(status_code=404, detail="提示词不存在")
-        
+
         logger.info(f"使用提示词: {prompt_obj['name']}")
-        
+
         # 3. 调用 AI 提炼
         try:
             result = refine_content(
                 content=material.content,
                 prompt=prompt_obj['content'],
-                model=model,
-                api_key=api_key
+                model=request.model,
+                api_key=request.api_key
             )
-            
+
             logger.info(f"AI 提炼成功: tokens={result['tokens_used']}, cost=${result['cost_usd']}")
-            
+
             # 4. 返回结果
             return ApiResponse(
                 code=200,
@@ -383,7 +380,7 @@ async def refine_material(
                     "model_used": result['model_used'],
                     "tokens_used": result['tokens_used'],
                     "cost_usd": result['cost_usd'],
-                    "material_id": material_id
+                    "material_id": request.material_id
                 }
             )
             
@@ -430,11 +427,7 @@ async def get_prompts():
 
 @app.post("/api/topics/inspiration", response_model=ApiResponse)
 async def generate_inspirations(
-    material_ids: list[int] = None,
-    source_type: str = None,
-    count: int = 5,
-    model: str = "gpt-3.5-turbo",
-    api_key: str = None,
+    request: TopicInspirationRequest,
     db: Session = Depends(get_db)
 ):
     """
@@ -449,14 +442,14 @@ async def generate_inspirations(
         model: AI 模型
         api_key: API Key（可选）
     """
-    logger.info(f"生成选题灵感: material_ids={material_ids}, source_type={source_type}, count={count}")
+    logger.info(f"生成选题灵感: material_ids={request.material_ids}, source_type={request.source_type}, count={request.count}")
 
     try:
         # 1. 获取素材列表
-        if material_ids:
+        if request.material_ids:
             # 根据指定 ID 获取素材
             materials = []
-            for mat_id in material_ids:
+            for mat_id in request.material_ids:
                 material = crud.get_material(db, mat_id)
                 if material:
                     materials.append(material)
@@ -470,8 +463,8 @@ async def generate_inspirations(
             from models import Material
             query = db.query(Material)
 
-            if source_type:
-                query = query.filter(Material.source_type == source_type)
+            if request.source_type:
+                query = query.filter(Material.source_type == request.source_type)
 
             materials = query.order_by(Material.created_at.desc()).limit(20).all()
 
@@ -497,9 +490,9 @@ async def generate_inspirations(
         try:
             result = generate_topic_inspirations(
                 materials=materials_data,
-                count=count,
-                model=model,
-                api_key=api_key
+                count=request.count,
+                model=request.model,
+                api_key=request.api_key
             )
 
             logger.info(f"生成灵感成功: count={len(result['inspirations'])}, tokens={result['tokens_used']}")
@@ -540,12 +533,7 @@ async def generate_inspirations(
 
 @app.post("/api/refine/batch", response_model=ApiResponse)
 async def batch_refine(
-    material_ids: list[int],
-    prompt_id: int = None,
-    custom_prompt: str = None,
-    mode: str = "synthesize",
-    model: str = "gpt-3.5-turbo",
-    api_key: str = None,
+    request: BatchRefineRequest,
     db: Session = Depends(get_db)
 ):
     """
@@ -564,22 +552,22 @@ async def batch_refine(
         model: AI 模型
         api_key: API Key（可选）
     """
-    logger.info(f"批量提炼: material_ids={material_ids}, mode={mode}, count={len(material_ids)}")
+    logger.info(f"批量提炼: material_ids={request.material_ids}, mode={request.mode}, count={len(request.material_ids)}")
 
     try:
         # 1. 验证参数
-        if not material_ids or len(material_ids) < 2:
+        if not request.material_ids or len(request.material_ids) < 2:
             raise HTTPException(status_code=400, detail="至少需要选择 2 个素材")
 
-        if len(material_ids) > 5:
+        if len(request.material_ids) > 5:
             raise HTTPException(status_code=400, detail="最多支持 5 个素材的批量提炼")
 
-        if mode not in ['combine', 'compare', 'synthesize']:
+        if request.mode not in ['combine', 'compare', 'synthesize']:
             raise HTTPException(status_code=400, detail="模式错误，请选择 combine/compare/synthesize")
 
         # 2. 获取素材
         materials = []
-        for mat_id in material_ids:
+        for mat_id in request.material_ids:
             material = crud.get_material(db, mat_id)
             if material:
                 materials.append(material)
@@ -591,12 +579,12 @@ async def batch_refine(
 
         # 3. 准备提示词
         prompt_text = ""
-        if custom_prompt:
-            prompt_text = custom_prompt
+        if request.custom_prompt:
+            prompt_text = request.custom_prompt
             logger.info("使用自定义提示词")
-        elif prompt_id:
+        elif request.prompt_id:
             prompts = get_default_prompts()
-            prompt_obj = next((p for p in prompts if p['id'] == prompt_id), None)
+            prompt_obj = next((p for p in prompts if p['id'] == request.prompt_id), None)
             if not prompt_obj:
                 raise HTTPException(status_code=404, detail="提示词不存在")
             prompt_text = prompt_obj['content']
@@ -624,12 +612,12 @@ async def batch_refine(
             result = batch_refine_materials(
                 materials=materials_data,
                 prompt=prompt_text,
-                mode=mode,
-                model=model,
-                api_key=api_key
+                mode=request.mode,
+                model=request.model,
+                api_key=request.api_key
             )
 
-            logger.info(f"批量提炼成功: mode={mode}, tokens={result['tokens_used']}")
+            logger.info(f"批量提炼成功: mode={request.mode}, tokens={result['tokens_used']}")
 
             # 6. 返回结果
             return ApiResponse(

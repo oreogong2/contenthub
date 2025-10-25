@@ -61,7 +61,25 @@ class RefineRequest(BaseModel):
     """AI 提炼请求模型"""
     material_id: int = Field(..., description="素材ID")
     prompt_id: int = Field(..., description="提示词ID")
-    model: Optional[str] = Field("gpt-4", description="AI模型")
+    model: Optional[str] = Field("gpt-3.5-turbo", description="AI模型")
+    api_key: Optional[str] = Field(None, description="API密钥")
+
+class BatchRefineRequest(BaseModel):
+    """批量提炼请求模型"""
+    material_ids: List[int] = Field(..., min_items=2, max_items=5, description="素材ID列表（2-5个）")
+    prompt_id: Optional[int] = Field(None, description="提示词ID")
+    custom_prompt: Optional[str] = Field(None, description="自定义提示词")
+    mode: str = Field("synthesize", description="提炼模式：combine/compare/synthesize")
+    model: Optional[str] = Field("gpt-3.5-turbo", description="AI模型")
+    api_key: Optional[str] = Field(None, description="API密钥")
+
+class TopicInspirationRequest(BaseModel):
+    """选题灵感请求模型"""
+    material_ids: Optional[List[int]] = Field(None, description="素材ID列表（可选，不提供则分析所有素材）")
+    source_type: Optional[str] = Field(None, description="来源类型过滤（可选）")
+    count: int = Field(5, ge=1, le=10, description="生成灵感数量")
+    model: Optional[str] = Field("gpt-3.5-turbo", description="AI模型")
+    api_key: Optional[str] = Field(None, description="API密钥")
 
 # ========== 通用响应模型 ==========
 
