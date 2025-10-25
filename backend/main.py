@@ -499,6 +499,120 @@ async def get_topic_detail(
         logger.error(f"获取选题详情失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
+@app.put("/api/topics/{topic_id}", response_model=ApiResponse)
+async def update_topic(
+    topic_id: int,
+    topic: TopicCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    更新选题
+    
+    更新选题的标题、内容和标签
+    """
+    logger.info(f"更新选题: id={topic_id}, title={topic.title}")
+    
+    try:
+        from models import Topic
+        
+        # 1. 查询选题是否存在
+        db_topic = db.query(Topic).filter(Topic.id == topic_id).first()
+        
+        if not db_topic:
+            logger.warning(f"选题不存在: id={topic_id}")
+            raise HTTPException(status_code=404, detail="选题不存在")
+        
+        # 2. 验证标题
+        if not topic.title or not topic.title.strip():
+            logger.warning("标题为空")
+            raise HTTPException(status_code=400, detail="标题不能为空")
+        
+        if len(topic.title) > 200:
+            logger.warning(f"标题过长: {len(topic.title)}")
+            raise HTTPException(status_code=400, detail="标题最长200字")
+        
+        # 3. 验证内容
+        if not topic.refined_content or not topic.refined_content.strip():
+            logger.warning("内容为空")
+            raise HTTPException(status_code=400, detail="内容不能为空")
+        
+        # 4. 验证标签
+        if not topic.tags or len(topic.tags) == 0:
+            logger.warning("标签为空")
+            raise HTTPException(status_code=400, detail="至少需要一个标签")
+        
+        # 5. 更新数据
+        db_topic.title = topic.title.strip()
+        db_topic.refined_content = topic.refined_content.strip()
+        db_topic.tags = json.dumps(topic.tags, ensure_ascii=False)
+        db_topic.prompt_name = topic.prompt_name
+        
+        # 更新时间会自动更新（onupdate）
+        db.commit()
+        db.refresh(db_topic)
+        
+        logger.info(f"选题更新成功: id={topic_id}")
+        
+        # 6. 返回更新后的数据
+        return ApiResponse(
+            code=200,
+            message="选题更新成功",
+            data={
+                "id": db_topic.id,
+                "title": db_topic.title,
+                "tags": json.loads(db_topic.tags),
+                "updated_at": db_topic.updated_at.isoformat()
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新选题失败: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.delete("/api/topics/{topic_id}", response_model=ApiResponse)
+async def delete_topic(
+    topic_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    删除选题
+    
+    根据 ID 删除选题
+    """
+    logger.info(f"删除选题: id={topic_id}")
+    
+    try:
+        from models import Topic
+        
+        # 1. 查询选题是否存在
+        db_topic = db.query(Topic).filter(Topic.id == topic_id).first()
+        
+        if not db_topic:
+            logger.warning(f"选题不存在: id={topic_id}")
+            raise HTTPException(status_code=404, detail="选题不存在")
+        
+        # 2. 删除选题
+        db.delete(db_topic)
+        db.commit()
+        
+        logger.info(f"选题删除成功: id={topic_id}")
+        
+        return ApiResponse(
+            code=200,
+            message="选题删除成功",
+            data={"id": topic_id}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除选题失败: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
 @app.get("/api/topics", response_model=ApiResponse)
 async def get_topics(
     page: int = 1,
