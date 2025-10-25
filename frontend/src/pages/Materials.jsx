@@ -300,46 +300,29 @@ export default function Materials() {
                 {showFilters ? '收起筛选' : '高级筛选'}
               </Button>
             </Space>
-            <Space>
+            <Space wrap>
+              {/* 新增：发现选题灵感按钮 - 测试版 */}
               <Button
+                type="primary"
                 size="large"
-                icon={<ClearOutlined />}
-                onClick={handleClearFilters}
-                disabled={!searchKeyword && !sourceFilter}
+                danger
+                icon={<BulbOutlined />}
+                onClick={handleGenerateInspirations}
+                loading={inspirationLoading}
               >
-                清除筛选
+                💡 发现选题灵感
               </Button>
-
-              {/* 新增：发现选题灵感按钮 */}
-              <Badge count={selectedIds.length > 0 ? `${selectedIds.length}` : null}>
-                <Button
-                  type="primary"
-                  size="large"
-                  icon={<BulbOutlined />}
-                  onClick={handleGenerateInspirations}
-                  loading={inspirationLoading}
-                  style={{
-                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                    border: 'none'
-                  }}
-                >
-                  发现选题灵感
-                </Button>
-              </Badge>
 
               {/* 新增：批量提炼按钮 */}
               {selectedIds.length >= 2 && (
                 <Button
+                  type="primary"
                   size="large"
+                  danger
                   icon={<FireOutlined />}
                   onClick={handleBatchRefine}
-                  style={{
-                    background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                    border: 'none',
-                    color: '#fff'
-                  }}
                 >
-                  批量提炼 ({selectedIds.length})
+                  🔥 批量提炼 ({selectedIds.length})
                 </Button>
               )}
 
@@ -350,14 +333,17 @@ export default function Materials() {
                 icon={<ThunderboltOutlined />}
                 onClick={handleRefineSelected}
                 disabled={selectedIds.length !== 1}
-                style={{
-                  background: selectedIds.length === 1
-                    ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                    : undefined,
-                  border: 'none'
-                }}
               >
-                AI 提炼 ({selectedIds.length})
+                ⚡ AI 提炼 ({selectedIds.length})
+              </Button>
+
+              <Button
+                size="large"
+                icon={<ClearOutlined />}
+                onClick={handleClearFilters}
+                disabled={!searchKeyword && !sourceFilter}
+              >
+                清除筛选
               </Button>
             </Space>
           </Space>
