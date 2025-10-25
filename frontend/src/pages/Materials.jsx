@@ -1,24 +1,26 @@
 /**
- * Materials.jsx - 素材库页面
- * 功能：展示所有素材、选择素材、批量AI提炼
+ * Materials.jsx - 素材库页面（优化版）
+ * 功能：瀑布流布局、高级筛选、批量AI提炼
  */
 
 import { useState, useEffect } from 'react'
-import { Card, Input, Button, Space, Spin, Empty, message, Pagination, Checkbox } from 'antd'
-import { SearchOutlined, ThunderboltOutlined, ReloadOutlined } from '@ant-design/icons'
+import { Card, Input, Button, Space, Spin, Empty, message, Checkbox, Tag, Select, DatePicker } from 'antd'
+import { SearchOutlined, ThunderboltOutlined, ReloadOutlined, FilterOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { materialApi } from '../api'
 import useStore from '../store/useStore'
+import dayjs from 'dayjs'
 
 const { Search } = Input
+const { RangePicker } = DatePicker
 
 // 来源类型映射
 const SOURCE_TYPES = {
-  'twitter': '推特',
-  'xiaohongshu': '小红书',
-  'podcast': '播客',
-  'douyin': '抖音',
-  'other': '其他'
+  'twitter': { label: '推特', emoji: '🐦', color: '#1DA1F2' },
+  'xiaohongshu': { label: '小红书', emoji: '📕', color: '#FF2442' },
+  'podcast': { label: '播客', emoji: '🎙️', color: '#9333EA' },
+  'douyin': { label: '抖音', emoji: '📱', color: '#FE2C55' },
+  'other': { label: '其他', emoji: '📝', color: '#64748B' }
 }
 
 export default function Materials() {
@@ -29,9 +31,14 @@ export default function Materials() {
   const [materials, setMaterials] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [perPage] = useState(20)
-  const [searchKeyword, setSearchKeyword] = useState('')
+  const [perPage] = useState(50) // 瀑布流显示更多
   const [selectedIds, setSelectedIds] = useState([])
+  
+  // 筛选条件
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [sourceFilter, setSourceFilter] = useState(undefined)
+  const [dateRange, setDateRange] = useState(null)
+  const [showFilters, setShowFilters] = useState(false)
 
   // 加载素材列表
   const loadMaterials = async () => {
@@ -47,15 +54,26 @@ export default function Materials() {
         params.search = searchKeyword
       }
       
-      console.log('加载素材列表:', params)
+      if (sourceFilter) {
+        params.source_type = sourceFilter
+      }
       
       const response = await materialApi.getList(params)
       
-      console.log('API响应:', response)
-      
       if (response.code === 200) {
-        setMaterials(response.data.items)
-        setTotal(response.data.total)
+        let items = response.data.items || []
+        
+        // 前端按日期范围筛选（如果后端不支持）
+        if (dateRange && dateRange.length === 2) {
+          const [start, end] = dateRange
+          items = items.filter(item => {
+            const itemDate = dayjs(item.created_at)
+            return itemDate.isAfter(start.startOf('day')) && itemDate.isBefore(end.endOf('day'))
+          })
+        }
+        
+        setMaterials(items)
+        setTotal(response.data.total || items.length)
       } else {
         message.error(response.message || '加载失败')
       }
@@ -71,19 +89,21 @@ export default function Materials() {
   // 初始加载
   useEffect(() => {
     loadMaterials()
-  }, [page])
+  }, [page, sourceFilter])
 
   // 搜索
-  const handleSearch = (value) => {
-    setSearchKeyword(value)
+  const handleSearch = () => {
     setPage(1)
-    setTimeout(() => loadMaterials(), 100)
+    loadMaterials()
   }
 
-  // 分页
-  const handlePageChange = (newPage) => {
-    setPage(newPage)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+  // 重置筛选
+  const handleReset = () => {
+    setSearchKeyword('')
+    setSourceFilter(undefined)
+    setDateRange(null)
+    setPage(1)
+    setTimeout(() => loadMaterials(), 100)
   }
 
   // 全选/取消全选
@@ -116,42 +136,39 @@ export default function Materials() {
       return
     }
 
-    // 获取选中的第一个素材
     const selectedMaterial = materials.find(m => m.id === selectedIds[0])
     if (selectedMaterial) {
-      // 设置当前素材到store
       setCurrentMaterial({
         id: selectedMaterial.id,
         content: selectedMaterial.content_full,
         source_type: selectedMaterial.source_type,
         title: selectedMaterial.title
       })
-      // 跳转到提炼页
       navigate('/refine')
     }
   }
 
   // 格式化日期
   const formatDate = (isoString) => {
-    const date = new Date(isoString)
-    const now = new Date()
-    const diff = now - date
+    const date = dayjs(isoString)
+    const now = dayjs()
+    const diff = now.diff(date, 'day')
     
-    const seconds = Math.floor(diff / 1000)
-    const minutes = Math.floor(seconds / 60)
-    const hours = Math.floor(minutes / 60)
-    const days = Math.floor(hours / 24)
-    
-    if (days > 7) {
-      return date.toLocaleDateString('zh-CN')
-    } else if (days > 0) {
-      return `${days} 天前`
-    } else if (hours > 0) {
-      return `${hours} 小时前`
-    } else if (minutes > 0) {
-      return `${minutes} 分钟前`
+    if (diff === 0) {
+      return '今天 ' + date.format('HH:mm')
+    } else if (diff === 1) {
+      return '昨天 ' + date.format('HH:mm')
+    } else if (diff < 7) {
+      return diff + ' 天前'
     } else {
-      return '刚刚'
+      return date.format('MM-DD HH:mm')
+    }
+  }
+
+  // 加载更多
+  const handleLoadMore = () => {
+    if (materials.length < total) {
+      setPage(page + 1)
     }
   }
 
@@ -167,31 +184,37 @@ export default function Materials() {
         </div>
       </div>
 
-      {/* 搜索和操作 */}
+      {/* 搜索和筛选栏 */}
       <Card style={{ marginBottom: 24 }}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          {/* 搜索框 */}
-          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Search
-              size="large"
-              placeholder="搜索素材标题或内容..."
-              allowClear
-              enterButton={<><SearchOutlined /> 搜索</>}
-              onSearch={handleSearch}
-              style={{ maxWidth: 600 }}
-            />
+          {/* 主操作栏 */}
+          <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
+            <Space>
+              <Search
+                size="large"
+                placeholder="搜索标题或内容..."
+                allowClear
+                enterButton={<SearchOutlined />}
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                onSearch={handleSearch}
+                style={{ width: 400 }}
+              />
+              <Button
+                size="large"
+                icon={<FilterOutlined />}
+                onClick={() => setShowFilters(!showFilters)}
+              >
+                {showFilters ? '收起筛选' : '高级筛选'}
+              </Button>
+            </Space>
             <Space>
               <Button
                 size="large"
                 icon={<ReloadOutlined />}
-                onClick={() => {
-                  setSearchKeyword('')
-                  setPage(1)
-                  setSelectedIds([])
-                  loadMaterials()
-                }}
+                onClick={handleReset}
               >
-                刷新
+                重置
               </Button>
               <Button
                 type="primary"
@@ -206,15 +229,81 @@ export default function Materials() {
                   border: 'none'
                 }}
               >
-                AI 提炼选中 ({selectedIds.length})
+                AI 提炼 ({selectedIds.length})
               </Button>
             </Space>
           </Space>
+
+          {/* 高级筛选 */}
+          {showFilters && (
+            <div style={{ 
+              padding: 16, 
+              background: 'rgba(17, 24, 39, 0.5)',
+              borderRadius: 8 
+            }}>
+              <Space size="large" wrap>
+                {/* 来源平台筛选 */}
+                <div>
+                  <div style={{ marginBottom: 8, color: '#888', fontSize: 13 }}>来源平台</div>
+                  <Select
+                    size="large"
+                    placeholder="全部平台"
+                    allowClear
+                    value={sourceFilter}
+                    onChange={setSourceFilter}
+                    style={{ width: 180 }}
+                    options={[
+                      { label: '🐦 推特', value: 'twitter' },
+                      { label: '📕 小红书', value: 'xiaohongshu' },
+                      { label: '🎙️ 播客', value: 'podcast' },
+                      { label: '📱 抖音', value: 'douyin' },
+                      { label: '📝 其他', value: 'other' }
+                    ]}
+                  />
+                </div>
+
+                {/* 日期范围筛选 */}
+                <div>
+                  <div style={{ marginBottom: 8, color: '#888', fontSize: 13 }}>创建时间</div>
+                  <RangePicker
+                    size="large"
+                    value={dateRange}
+                    onChange={setDateRange}
+                    style={{ width: 280 }}
+                    placeholder={['开始日期', '结束日期']}
+                  />
+                </div>
+
+                <div style={{ paddingTop: 24 }}>
+                  <Button 
+                    type="primary" 
+                    onClick={handleSearch}
+                    style={{ marginRight: 8 }}
+                  >
+                    应用筛选
+                  </Button>
+                </div>
+              </Space>
+            </div>
+          )}
+
+          {/* 批量操作 */}
+          {materials.length > 0 && (
+            <div style={{ paddingTop: 8 }}>
+              <Checkbox
+                checked={selectedIds.length === materials.length}
+                indeterminate={selectedIds.length > 0 && selectedIds.length < materials.length}
+                onChange={handleSelectAll}
+              >
+                <span style={{ color: '#d1d5db' }}>全选本页</span>
+              </Checkbox>
+            </div>
+          )}
         </Space>
       </Card>
 
-      {/* 素材列表 */}
-      {loading ? (
+      {/* 素材列表 - 瀑布流布局 */}
+      {loading && materials.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 60 }}>
           <Spin size="large" />
           <div style={{ marginTop: 16, color: '#888' }}>加载中...</div>
@@ -222,13 +311,13 @@ export default function Materials() {
       ) : materials.length === 0 ? (
         <Empty
           description={
-            searchKeyword
+            searchKeyword || sourceFilter || dateRange
               ? '没有找到匹配的素材'
               : '还没有添加任何素材'
           }
           style={{ padding: 60 }}
         >
-          {!searchKeyword && (
+          {!searchKeyword && !sourceFilter && (
             <Button type="primary" onClick={() => navigate('/')}>
               立即添加
             </Button>
@@ -236,118 +325,115 @@ export default function Materials() {
         </Empty>
       ) : (
         <>
-          {/* 全选选项 */}
-          <div style={{ marginBottom: 16, padding: '0 8px' }}>
-            <Checkbox
-              checked={selectedIds.length === materials.length}
-              indeterminate={selectedIds.length > 0 && selectedIds.length < materials.length}
-              onChange={handleSelectAll}
-            >
-              <span style={{ color: '#d1d5db' }}>全选本页</span>
-            </Checkbox>
-          </div>
-
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            {materials.map(material => (
-              <Card
-                key={material.id}
-                style={{
-                  borderRadius: 12,
-                  border: selectedIds.includes(material.id)
-                    ? '2px solid #3b82f6'
-                    : '1px solid rgba(255, 255, 255, 0.1)',
-                  background: 'rgba(17, 24, 39, 0.6)',
-                  backdropFilter: 'blur(10px)'
-                }}
-                bodyStyle={{ padding: 24 }}
-              >
-                <div style={{ display: 'flex', gap: 16 }}>
-                  {/* 复选框 */}
-                  <div>
+          {/* 瀑布流网格 */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+            gap: '20px',
+            marginBottom: 24
+          }}>
+            {materials.map(material => {
+              const sourceInfo = SOURCE_TYPES[material.source_type] || SOURCE_TYPES.other
+              const isSelected = selectedIds.includes(material.id)
+              
+              return (
+                <Card
+                  key={material.id}
+                  hoverable
+                  style={{
+                    borderRadius: 12,
+                    border: isSelected
+                      ? '2px solid #10b981'
+                      : '1px solid rgba(255, 255, 255, 0.1)',
+                    background: 'rgba(17, 24, 39, 0.6)',
+                    backdropFilter: 'blur(10px)',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s'
+                  }}
+                  bodyStyle={{ padding: 16 }}
+                  onClick={() => handleSelectOne(material.id)}
+                >
+                  {/* 复选框和来源标签 */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                     <Checkbox
-                      checked={selectedIds.includes(material.id)}
+                      checked={isSelected}
+                      onClick={(e) => e.stopPropagation()}
                       onChange={() => handleSelectOne(material.id)}
                     />
+                    <Tag 
+                      color={sourceInfo.color}
+                      style={{ margin: 0, borderRadius: 6 }}
+                    >
+                      {sourceInfo.emoji} {sourceInfo.label}
+                    </Tag>
                   </div>
 
-                  {/* 内容 */}
-                  <div style={{ flex: 1 }}>
-                    {/* 标题 */}
-                    <h3 style={{ 
-                      fontSize: 18, 
-                      fontWeight: 600, 
-                      marginBottom: 12,
-                      color: '#fff'
-                    }}>
-                      {material.title}
-                    </h3>
+                  {/* 标题 */}
+                  <h3 style={{ 
+                    fontSize: 16, 
+                    fontWeight: 600, 
+                    marginBottom: 12,
+                    color: '#fff',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {material.title}
+                  </h3>
 
-                    {/* 内容预览 */}
-                    <div style={{ 
-                      color: '#d1d5db', 
-                      marginBottom: 16,
-                      lineHeight: 1.6,
-                      maxHeight: 60,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical'
-                    }}>
-                      {material.content}
-                    </div>
-
-                    {/* 元信息 */}
-                    <div style={{ 
-                      display: 'flex', 
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      color: '#888',
-                      fontSize: 13
-                    }}>
-                      <Space split="·">
-                        <span>📅 {formatDate(material.created_at)}</span>
-                        <span>📍 {SOURCE_TYPES[material.source_type] || material.source_type}</span>
-                        <span>📝 {material.content_length} 字</span>
-                        {material.file_name && (
-                          <span>📄 {material.file_name}</span>
-                        )}
-                      </Space>
-                      
-                      <Button 
-                        type="link" 
-                        style={{ padding: 0 }}
-                        onClick={() => {
-                          setSelectedIds([material.id])
-                          handleRefineSelected()
-                        }}
-                      >
-                        立即提炼 →
-                      </Button>
-                    </div>
+                  {/* 内容预览 */}
+                  <div style={{ 
+                    color: '#d1d5db', 
+                    fontSize: 14,
+                    lineHeight: 1.6,
+                    marginBottom: 16,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 4,
+                    WebkitBoxOrient: 'vertical',
+                    minHeight: 88
+                  }}>
+                    {material.content}
                   </div>
-                </div>
-              </Card>
-            ))}
-          </Space>
+
+                  {/* 元信息 */}
+                  <div style={{ 
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    color: '#888',
+                    fontSize: 12,
+                    borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                    paddingTop: 12
+                  }}>
+                    <span>📅 {formatDate(material.created_at)}</span>
+                    <span>📝 {material.content_length} 字</span>
+                  </div>
+                </Card>
+              )
+            })}
+          </div>
+
+          {/* 加载更多 */}
+          {materials.length < total && (
+            <div style={{ textAlign: 'center', marginTop: 32 }}>
+              <Button
+                size="large"
+                onClick={handleLoadMore}
+                loading={loading}
+                style={{
+                  background: 'rgba(59, 130, 246, 0.1)',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  color: '#3b82f6'
+                }}
+              >
+                加载更多 ({materials.length} / {total})
+              </Button>
+            </div>
+          )}
         </>
-      )}
-
-      {/* 分页 */}
-      {total > perPage && (
-        <div style={{ textAlign: 'center', marginTop: 32 }}>
-          <Pagination
-            current={page}
-            total={total}
-            pageSize={perPage}
-            onChange={handlePageChange}
-            showSizeChanger={false}
-            showQuickJumper
-            showTotal={(total) => `共 ${total} 条`}
-          />
-        </div>
       )}
     </div>
   )
 }
-
