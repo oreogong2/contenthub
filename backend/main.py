@@ -691,6 +691,97 @@ async def get_topics(
         logger.error(f"获取选题列表失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
+# ========== 配置管理接口 ==========
+
+@app.get("/api/configs", response_model=ApiResponse)
+async def get_configs(db: Session = Depends(get_db)):
+    """
+    获取所有配置
+    """
+    logger.info("获取配置信息")
+    
+    try:
+        from models import Config
+        
+        # 查询所有配置
+        configs = db.query(Config).all()
+        
+        # 格式化返回数据
+        config_dict = {}
+        for config in configs:
+            config_dict[config.key] = config.value
+        
+        # 如果没有配置，返回默认值
+        if not config_dict:
+            config_dict = {
+                "default_ai_model": "gpt-4",
+                "openai_api_key": "",
+                "claude_api_key": "",
+                "preset_tags": json.dumps([
+                    "商业思维", "科技趋势", "生活方式",
+                    "创业故事", "个人成长", "情感励志"
+                ], ensure_ascii=False)
+            }
+        
+        logger.info(f"配置获取成功: {len(config_dict)} 项")
+        
+        return ApiResponse(
+            code=200,
+            message="success",
+            data=config_dict
+        )
+        
+    except Exception as e:
+        logger.error(f"获取配置失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.put("/api/configs", response_model=ApiResponse)
+async def update_configs(
+    configs: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    更新配置
+    
+    批量更新配置项
+    """
+    logger.info(f"更新配置: {list(configs.keys())}")
+    
+    try:
+        from models import Config
+        from datetime import datetime
+        
+        # 遍历配置项并更新
+        for key, value in configs.items():
+            # 查询配置是否存在
+            config = db.query(Config).filter(Config.key == key).first()
+            
+            if config:
+                # 更新现有配置
+                config.value = value
+                config.updated_at = datetime.now()
+                logger.info(f"更新配置: {key}")
+            else:
+                # 创建新配置
+                config = Config(key=key, value=value)
+                db.add(config)
+                logger.info(f"创建配置: {key}")
+        
+        db.commit()
+        
+        logger.info(f"配置更新成功: {len(configs)} 项")
+        
+        return ApiResponse(
+            code=200,
+            message="配置更新成功",
+            data=configs
+        )
+        
+    except Exception as e:
+        logger.error(f"更新配置失败: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
 if __name__ == "__main__":
     import uvicorn
     logger.info("启动 ContentHub API 服务器")
