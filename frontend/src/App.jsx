@@ -5,6 +5,7 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'
 import { ConfigProvider, Layout, Menu, theme } from 'antd'
 import Home from './pages/Home'
+import Materials from './pages/Materials'
 import Refine from './pages/Refine'
 import Save from './pages/Save'
 import Topics from './pages/Topics'
@@ -21,6 +22,7 @@ function Navigation() {
   
   const menuItems = [
     { key: '/', label: '📝 新建素材', path: '/' },
+    { key: '/materials', label: '📚 素材库', path: '/materials' },
     { key: '/topics', label: '💾 我的选题', path: '/topics' },
     { key: '/settings', label: '⚙️ 设置', path: '/settings' }
   ]
@@ -132,13 +134,14 @@ function App() {
             
             <div style={{ position: 'relative', zIndex: 1 }}>
               <Routes>
-                <Route path="/" element={<Home />} />
-                <Route path="/refine" element={<Refine />} />
-                <Route path="/save" element={<Save />} />
-                <Route path="/topics" element={<Topics />} />
-                <Route path="/topics/:id" element={<TopicDetail />} />
-                <Route path="/topics/:id/edit" element={<TopicEdit />} />
-                <Route path="/settings" element={<Settings />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/materials" element={<Materials />} />
+          <Route path="/refine" element={<Refine />} />
+          <Route path="/save" element={<Save />} />
+          <Route path="/topics" element={<Topics />} />
+          <Route path="/topics/:id" element={<TopicDetail />} />
+          <Route path="/topics/:id/edit" element={<TopicEdit />} />
+          <Route path="/settings" element={<Settings />} />
               </Routes>
             </div>
           </Content>

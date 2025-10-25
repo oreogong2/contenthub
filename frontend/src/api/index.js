@@ -54,6 +54,9 @@ export const materialApi = {
     })
   },
   
+  // 获取素材列表
+  getList: (params) => api.get('/materials', { params }),
+  
   // 获取素材详情
   getDetail: (id) => api.get(`/materials/${id}`)
 }

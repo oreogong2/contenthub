@@ -121,21 +121,15 @@ export default function Home() {
       console.log('API响应:', response)
       
       if (response.code === 200) {
-        message.success(`PDF 上传成功！已提取 ${response.data.word_count} 字`)
+        message.success(`PDF 已保存到素材库！已提取 ${response.data.word_count} 字`)
         
-        // 保存素材信息到状态
-        setCurrentMaterial({
-          id: response.data.id,
-          title: response.data.title,
-          content: `（从 PDF 提取的文本，共 ${response.data.word_count} 字）`,
-          source_type: response.data.source_type,
-          file_name: response.data.file_name,
-          word_count: response.data.word_count
-        })
+        // 清空PDF状态
+        setPdfFile(null)
+        setFileList([])
         
-        // 跳转到提炼页面
+        // 跳转到素材库
         setTimeout(() => {
-          navigate('/refine')
+          navigate('/materials')
         }, 500)
       } else {
         message.error(response.message || 'PDF 上传失败')
@@ -173,19 +167,16 @@ export default function Home() {
       console.log('API响应:', response)
       
       if (response.code === 200) {
-        message.success('素材已添加！')
+        message.success('素材已保存到素材库！')
         
-        // 保存素材信息到状态
-        setCurrentMaterial({
-          id: response.data.id,
-          title: formData.title || '未命名素材',
-          content: formData.content,
-          source_type: formData.source_type
-        })
+        // 清空表单
+        setTextContent('')
+        setTitle('')
+        setSourceType('twitter')
         
-        // 跳转到提炼页面
+        // 跳转到素材库
         setTimeout(() => {
-          navigate('/refine')
+          navigate('/materials')
         }, 500)
       } else {
         message.error(response.message || '添加失败')

@@ -121,6 +121,83 @@ async def create_text_material(
         logger.error(f"创建素材失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
+@app.get("/api/materials", response_model=ApiResponse)
+async def get_materials_list(
+    page: int = 1,
+    per_page: int = 20,
+    search: str = None,
+    source_type: str = None,
+    db: Session = Depends(get_db)
+):
+    """
+    获取素材列表
+    
+    支持分页、搜索、来源筛选
+    """
+    logger.info(f"获取素材列表: page={page}, per_page={per_page}, search={search}, source_type={source_type}")
+    
+    try:
+        from models import Material
+        
+        # 构建查询
+        query = db.query(Material)
+        
+        # 来源筛选
+        if source_type:
+            logger.info(f"按来源筛选: {source_type}")
+            query = query.filter(Material.source_type == source_type)
+        
+        # 搜索
+        if search:
+            logger.info(f"搜索关键词: {search}")
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                (Material.title.like(search_pattern)) | 
+                (Material.content.like(search_pattern))
+            )
+        
+        # 按创建时间倒序排列
+        query = query.order_by(Material.created_at.desc())
+        
+        # 统计总数
+        total = query.count()
+        
+        # 分页
+        offset = (page - 1) * per_page
+        materials = query.offset(offset).limit(per_page).all()
+        
+        # 格式化返回数据
+        materials_data = []
+        for material in materials:
+            materials_data.append({
+                "id": material.id,
+                "title": material.title or "无标题",
+                "content": material.content[:200] + "..." if len(material.content) > 200 else material.content,
+                "content_full": material.content,
+                "content_length": len(material.content),
+                "source_type": material.source_type,
+                "file_name": material.file_name,
+                "created_at": material.created_at.isoformat()
+            })
+        
+        logger.info(f"查询成功: 共 {total} 条，返回 {len(materials_data)} 条")
+        
+        return ApiResponse(
+            code=200,
+            message="success",
+            data={
+                "items": materials_data,
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": (total + per_page - 1) // per_page
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"获取素材列表失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
 @app.get("/api/materials/{material_id}", response_model=ApiResponse)
 async def get_material(
     material_id: int,
