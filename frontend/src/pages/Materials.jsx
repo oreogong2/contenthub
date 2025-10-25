@@ -1,13 +1,13 @@
 /**
- * Materials.jsx - 素材库页面（优化版）
- * 功能：瀑布流布局、高级筛选、批量AI提炼
+ * Materials.jsx - 素材库页面（增强版）
+ * 新增功能：选题灵感 + 批量提炼
  */
 
 import { useState, useEffect } from 'react'
-import { Card, Input, Button, Space, Spin, Empty, message, Checkbox, Tag, Select, Modal } from 'antd'
-import { SearchOutlined, ThunderboltOutlined, ClearOutlined, FilterOutlined, EyeOutlined } from '@ant-design/icons'
+import { Card, Input, Button, Space, Spin, Empty, message, Checkbox, Tag, Select, Modal, Radio, Badge, Divider, List } from 'antd'
+import { SearchOutlined, ThunderboltOutlined, ClearOutlined, FilterOutlined, EyeOutlined, BulbOutlined, FireOutlined, CheckCircleOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { materialApi } from '../api'
+import { materialApi, topicApi, aiApi } from '../api'
 import useStore from '../store/useStore'
 
 const { Search } = Input
@@ -25,42 +25,53 @@ const SOURCE_TYPES = {
 export default function Materials() {
   const navigate = useNavigate()
   const { setCurrentMaterial } = useStore()
-  
+
   const [loading, setLoading] = useState(false)
   const [materials, setMaterials] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [perPage] = useState(50) // 瀑布流显示更多
+  const [perPage] = useState(50)
   const [selectedIds, setSelectedIds] = useState([])
-  
+
   // 筛选条件
   const [searchKeyword, setSearchKeyword] = useState('')
   const [sourceFilter, setSourceFilter] = useState(undefined)
   const [showFilters, setShowFilters] = useState(false)
-  
+
   // 查看素材详情
   const [viewingMaterial, setViewingMaterial] = useState(null)
+
+  // 选题灵感相关
+  const [inspirationLoading, setInspirationLoading] = useState(false)
+  const [inspirations, setInspirations] = useState([])
+  const [showInspirations, setShowInspirations] = useState(false)
+
+  // 批量提炼相关
+  const [batchRefineVisible, setBatchRefineVisible] = useState(false)
+  const [batchRefineMode, setBatchRefineMode] = useState('synthesize')
+  const [batchRefineLoading, setBatchRefineLoading] = useState(false)
+  const [batchRefineResult, setBatchRefineResult] = useState(null)
 
   // 加载素材列表
   const loadMaterials = async () => {
     setLoading(true)
-    
+
     try {
       const params = {
         page,
         per_page: perPage
       }
-      
+
       if (searchKeyword) {
         params.search = searchKeyword
       }
-      
+
       if (sourceFilter) {
         params.source_type = sourceFilter
       }
-      
+
       const response = await materialApi.getList(params)
-      
+
       if (response.code === 200) {
         const items = response.data.items || []
         setMaterials(items)
@@ -68,7 +79,7 @@ export default function Materials() {
       } else {
         message.error(response.message || '加载失败')
       }
-      
+
     } catch (error) {
       console.error('加载素材失败:', error)
       message.error('加载失败，请重试')
@@ -115,7 +126,84 @@ export default function Materials() {
     }
   }
 
-  // AI提炼选中的素材
+  // ========== 新功能 1：生成选题灵感 ==========
+  const handleGenerateInspirations = async () => {
+    if (materials.length === 0) {
+      message.warning('请先添加素材')
+      return
+    }
+
+    setInspirationLoading(true)
+    try {
+      const requestData = {
+        count: 5,
+        model: 'gpt-3.5-turbo'
+      }
+
+      // 如果有选中的素材，只基于选中的生成
+      if (selectedIds.length > 0) {
+        requestData.material_ids = selectedIds
+      }
+
+      const response = await topicApi.generateInspirations(requestData)
+
+      if (response.code === 200) {
+        setInspirations(response.data.inspirations || [])
+        setShowInspirations(true)
+        message.success(`成功生成 ${response.data.inspirations.length} 个选题灵感`)
+      } else {
+        message.error(response.message || '生成失败')
+      }
+    } catch (error) {
+      console.error('生成灵感失败:', error)
+      message.error(error.message || '生成失败，请重试')
+    } finally {
+      setInspirationLoading(false)
+    }
+  }
+
+  // ========== 新功能 2：批量提炼 ==========
+  const handleBatchRefine = () => {
+    if (selectedIds.length < 2) {
+      message.warning('请至少选择 2 个素材进行批量提炼')
+      return
+    }
+
+    if (selectedIds.length > 5) {
+      message.warning('最多支持 5 个素材的批量提炼')
+      return
+    }
+
+    setBatchRefineVisible(true)
+    setBatchRefineResult(null)
+  }
+
+  const handleExecuteBatchRefine = async () => {
+    setBatchRefineLoading(true)
+    try {
+      const requestData = {
+        material_ids: selectedIds,
+        mode: batchRefineMode,
+        model: 'gpt-3.5-turbo'
+      }
+
+      const response = await aiApi.batchRefine(requestData)
+
+      if (response.code === 200) {
+        setBatchRefineResult(response.data)
+        message.success('批量提炼完成')
+      } else {
+        message.error(response.message || '提炼失败')
+      }
+    } catch (error) {
+      console.error('批量提炼失败:', error)
+      message.error(error.message || '提炼失败，请重试')
+    } finally {
+      setBatchRefineLoading(false)
+    }
+  }
+
+  // 单个素材AI提炼（保留原功能）
   const handleRefineSelected = () => {
     if (selectedIds.length === 0) {
       message.warning('请先选择要提炼的素材')
@@ -123,7 +211,7 @@ export default function Materials() {
     }
 
     if (selectedIds.length > 1) {
-      message.info('批量提炼功能即将推出，当前仅支持单个素材提炼')
+      message.info('已选择多个素材，请使用批量提炼功能')
       return
     }
 
@@ -144,11 +232,11 @@ export default function Materials() {
     const date = new Date(isoString)
     const now = new Date()
     const diff = Math.floor((now - date) / (1000 * 60 * 60 * 24))
-    
+
     const hours = date.getHours().toString().padStart(2, '0')
     const minutes = date.getMinutes().toString().padStart(2, '0')
     const timeStr = `${hours}:${minutes}`
-    
+
     if (diff === 0) {
       return `今天 ${timeStr}`
     } else if (diff === 1) {
@@ -161,10 +249,10 @@ export default function Materials() {
       return `${month}-${day} ${timeStr}`
     }
   }
-  
+
   // 查看素材详情
   const handleViewMaterial = (material, e) => {
-    e.stopPropagation() // 阻止卡片点击事件
+    e.stopPropagation()
     setViewingMaterial(material)
   }
 
@@ -220,14 +308,49 @@ export default function Materials() {
               >
                 清除筛选
               </Button>
+
+              {/* 新增：发现选题灵感按钮 */}
+              <Badge count={selectedIds.length > 0 ? `${selectedIds.length}` : null}>
+                <Button
+                  type="primary"
+                  size="large"
+                  icon={<BulbOutlined />}
+                  onClick={handleGenerateInspirations}
+                  loading={inspirationLoading}
+                  style={{
+                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                    border: 'none'
+                  }}
+                >
+                  发现选题灵感
+                </Button>
+              </Badge>
+
+              {/* 新增：批量提炼按钮 */}
+              {selectedIds.length >= 2 && (
+                <Button
+                  size="large"
+                  icon={<FireOutlined />}
+                  onClick={handleBatchRefine}
+                  style={{
+                    background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                    border: 'none',
+                    color: '#fff'
+                  }}
+                >
+                  批量提炼 ({selectedIds.length})
+                </Button>
+              )}
+
+              {/* 原有：单个AI提炼 */}
               <Button
                 type="primary"
                 size="large"
                 icon={<ThunderboltOutlined />}
                 onClick={handleRefineSelected}
-                disabled={selectedIds.length === 0}
+                disabled={selectedIds.length !== 1}
                 style={{
-                  background: selectedIds.length > 0 
+                  background: selectedIds.length === 1
                     ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
                     : undefined,
                   border: 'none'
@@ -240,10 +363,10 @@ export default function Materials() {
 
           {/* 高级筛选 */}
           {showFilters && (
-            <div style={{ 
-              padding: 16, 
+            <div style={{
+              padding: 16,
               background: 'rgba(17, 24, 39, 0.5)',
-              borderRadius: 8 
+              borderRadius: 8
             }}>
               <Space size="large" wrap>
                 {/* 来源平台筛选 */}
@@ -267,8 +390,8 @@ export default function Materials() {
                 </div>
 
                 <div style={{ paddingTop: 24 }}>
-                  <Button 
-                    type="primary" 
+                  <Button
+                    type="primary"
                     onClick={handleSearch}
                   >
                     应用筛选
@@ -326,7 +449,7 @@ export default function Materials() {
             {materials.map(material => {
               const sourceInfo = SOURCE_TYPES[material.source_type] || SOURCE_TYPES.other
               const isSelected = selectedIds.includes(material.id)
-              
+
               return (
                 <Card
                   key={material.id}
@@ -349,7 +472,7 @@ export default function Materials() {
                       onClick={(e) => e.stopPropagation()}
                       onChange={() => handleSelectOne(material.id)}
                     />
-                    <Tag 
+                    <Tag
                       color={sourceInfo.color}
                       style={{ margin: 0, borderRadius: 6 }}
                     >
@@ -358,9 +481,9 @@ export default function Materials() {
                   </div>
 
                   {/* 标题 */}
-                  <h3 style={{ 
-                    fontSize: 16, 
-                    fontWeight: 600, 
+                  <h3 style={{
+                    fontSize: 16,
+                    fontWeight: 600,
                     marginBottom: 12,
                     color: '#fff',
                     overflow: 'hidden',
@@ -371,8 +494,8 @@ export default function Materials() {
                   </h3>
 
                   {/* 内容预览 */}
-                  <div style={{ 
-                    color: '#d1d5db', 
+                  <div style={{
+                    color: '#d1d5db',
                     fontSize: 14,
                     lineHeight: 1.6,
                     marginBottom: 16,
@@ -387,7 +510,7 @@ export default function Materials() {
                   </div>
 
                   {/* 元信息和操作 */}
-                  <div style={{ 
+                  <div style={{
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
@@ -416,7 +539,7 @@ export default function Materials() {
                           e.stopPropagation()
                           handleSelectOne(material.id)
                         }}
-                        style={{ 
+                        style={{
                           color: isSelected ? '#10b981' : '#888'
                         }}
                       >
@@ -494,9 +617,9 @@ export default function Materials() {
         {viewingMaterial && (
           <div>
             {/* 元信息 */}
-            <div style={{ 
-              marginBottom: 16, 
-              padding: 12, 
+            <div style={{
+              marginBottom: 16,
+              padding: 12,
               background: 'rgba(59, 130, 246, 0.1)',
               borderRadius: 8,
               color: '#888',
@@ -526,6 +649,290 @@ export default function Materials() {
                   color: '#d1d5db'
                 }}
               />
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* 选题灵感弹窗 */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <BulbOutlined style={{ color: '#f59e0b', fontSize: 20 }} />
+            <span>💡 为你推荐 {inspirations.length} 个选题灵感</span>
+          </div>
+        }
+        open={showInspirations}
+        onCancel={() => setShowInspirations(false)}
+        width={900}
+        footer={[
+          <Button key="close" onClick={() => setShowInspirations(false)}>
+            关闭
+          </Button>,
+          <Button
+            key="refresh"
+            type="primary"
+            icon={<BulbOutlined />}
+            onClick={handleGenerateInspirations}
+            loading={inspirationLoading}
+            style={{
+              background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+              border: 'none'
+            }}
+          >
+            重新生成
+          </Button>
+        ]}
+      >
+        <List
+          dataSource={inspirations}
+          renderItem={(inspiration, index) => (
+            <Card
+              key={index}
+              style={{
+                marginBottom: 16,
+                background: 'rgba(17, 24, 39, 0.6)',
+                border: '1px solid rgba(255, 255, 255, 0.1)'
+              }}
+            >
+              <div style={{ marginBottom: 12 }}>
+                <h3 style={{ fontSize: 18, fontWeight: 600, color: '#fff', marginBottom: 8 }}>
+                  {index + 1}. {inspiration.title}
+                </h3>
+                <div style={{ color: '#d1d5db', marginBottom: 12 }}>
+                  {inspiration.description}
+                </div>
+                <Space size={[0, 8]} wrap>
+                  {inspiration.tags?.map((tag, i) => (
+                    <Tag key={i} color="blue">{tag}</Tag>
+                  ))}
+                </Space>
+              </div>
+
+              <Divider style={{ margin: '12px 0', borderColor: 'rgba(255, 255, 255, 0.1)' }} />
+
+              <div style={{ fontSize: 13, color: '#888' }}>
+                <div style={{ marginBottom: 8 }}>
+                  <strong style={{ color: '#d1d5db' }}>推荐理由：</strong> {inspiration.reasoning}
+                </div>
+                <Space size="large">
+                  <span>📊 难度：{inspiration.difficulty}</span>
+                  <span>⏱️ 时长：{inspiration.estimated_duration}</span>
+                  <span>🎯 角度：{inspiration.suggested_angle}</span>
+                  <span>📚 关联素材：{inspiration.related_material_ids?.length || 0} 个</span>
+                </Space>
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <Button
+                  type="primary"
+                  size="small"
+                  onClick={() => {
+                    // 选中相关素材
+                    if (inspiration.related_material_ids?.length > 0) {
+                      setSelectedIds(inspiration.related_material_ids)
+                      setShowInspirations(false)
+                      message.success('已自动选中相关素材，可以开始批量提炼')
+                    }
+                  }}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    border: 'none'
+                  }}
+                >
+                  查看相关素材 ({inspiration.related_material_ids?.length || 0})
+                </Button>
+              </div>
+            </Card>
+          )}
+        />
+      </Modal>
+
+      {/* 批量提炼弹窗 */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <FireOutlined style={{ color: '#8b5cf6', fontSize: 20 }} />
+            <span>批量提炼 - 已选择 {selectedIds.length} 个素材</span>
+          </div>
+        }
+        open={batchRefineVisible}
+        onCancel={() => {
+          setBatchRefineVisible(false)
+          setBatchRefineResult(null)
+        }}
+        width={900}
+        footer={[
+          <Button
+            key="close"
+            onClick={() => {
+              setBatchRefineVisible(false)
+              setBatchRefineResult(null)
+            }}
+          >
+            关闭
+          </Button>,
+          !batchRefineResult && (
+            <Button
+              key="refine"
+              type="primary"
+              icon={<ThunderboltOutlined />}
+              onClick={handleExecuteBatchRefine}
+              loading={batchRefineLoading}
+              style={{
+                background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                border: 'none'
+              }}
+            >
+              开始提炼
+            </Button>
+          )
+        ]}
+      >
+        {!batchRefineResult ? (
+          <div>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ marginBottom: 12, fontWeight: 600, color: '#d1d5db' }}>
+                选择提炼模式：
+              </div>
+              <Radio.Group
+                value={batchRefineMode}
+                onChange={(e) => setBatchRefineMode(e.target.value)}
+                style={{ width: '100%' }}
+              >
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Radio value="synthesize">
+                    <div>
+                      <div style={{ color: '#fff', marginBottom: 4 }}>
+                        🎯 <strong>综合模式</strong>（推荐）
+                      </div>
+                      <div style={{ color: '#888', fontSize: 13 }}>
+                        深度分析素材，提取共同主题，生成创新观点和选题建议
+                      </div>
+                    </div>
+                  </Radio>
+                  <Radio value="compare">
+                    <div>
+                      <div style={{ color: '#fff', marginBottom: 4 }}>
+                        📊 <strong>对比模式</strong>
+                      </div>
+                      <div style={{ color: '#888', fontSize: 13 }}>
+                        对比分析不同素材的观点，找出共同点和分歧点
+                      </div>
+                    </div>
+                  </Radio>
+                  <Radio value="combine">
+                    <div>
+                      <div style={{ color: '#fff', marginBottom: 4 }}>
+                        📝 <strong>整合模式</strong>
+                      </div>
+                      <div style={{ color: '#888', fontSize: 13 }}>
+                        保留所有关键信息，去重并按逻辑顺序组织
+                      </div>
+                    </div>
+                  </Radio>
+                </Space>
+              </Radio.Group>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 8, fontWeight: 600, color: '#d1d5db' }}>
+                选中的素材预览：
+              </div>
+              <div style={{
+                maxHeight: 300,
+                overflowY: 'auto',
+                background: 'rgba(17, 24, 39, 0.5)',
+                borderRadius: 8,
+                padding: 12
+              }}>
+                {selectedIds.map(id => {
+                  const material = materials.find(m => m.id === id)
+                  if (!material) return null
+                  const sourceInfo = SOURCE_TYPES[material.source_type] || SOURCE_TYPES.other
+                  return (
+                    <div
+                      key={id}
+                      style={{
+                        padding: 12,
+                        marginBottom: 8,
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        borderRadius: 6,
+                        borderLeft: `3px solid ${sourceInfo.color}`
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <span style={{ color: '#fff', fontWeight: 500 }}>{material.title}</span>
+                        <Tag color={sourceInfo.color} style={{ margin: 0 }}>
+                          {sourceInfo.emoji} {sourceInfo.label}
+                        </Tag>
+                      </div>
+                      <div style={{ color: '#888', fontSize: 13 }}>
+                        {material.content.slice(0, 100)}...
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div style={{
+              marginBottom: 16,
+              padding: 12,
+              background: 'rgba(16, 185, 129, 0.1)',
+              borderRadius: 8,
+              border: '1px solid rgba(16, 185, 129, 0.3)'
+            }}>
+              <Space>
+                <CheckCircleOutlined style={{ color: '#10b981', fontSize: 20 }} />
+                <span style={{ color: '#10b981', fontWeight: 600 }}>提炼完成</span>
+                <span style={{ color: '#888' }}>|</span>
+                <span style={{ color: '#888', fontSize: 13 }}>
+                  模式：{batchRefineResult.mode} ·
+                  素材数：{batchRefineResult.materials_count} ·
+                  Token：{batchRefineResult.tokens_used} ·
+                  费用：${batchRefineResult.cost_usd}
+                </span>
+              </Space>
+            </div>
+
+            <div>
+              <div style={{ marginBottom: 8, fontWeight: 600, color: '#d1d5db' }}>
+                提炼结果：
+              </div>
+              <TextArea
+                value={batchRefineResult.refined_text}
+                readOnly
+                autoSize={{ minRows: 15, maxRows: 30 }}
+                style={{
+                  background: 'rgba(17, 24, 39, 0.5)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  color: '#d1d5db',
+                  fontSize: 14,
+                  lineHeight: 1.8
+                }}
+              />
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <Button
+                type="primary"
+                icon={<CheckCircleOutlined />}
+                onClick={() => {
+                  // 这里可以跳转到保存选题页面或直接保存
+                  message.success('可以将这个结果保存为选题')
+                  setBatchRefineVisible(false)
+                  setBatchRefineResult(null)
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  border: 'none'
+                }}
+              >
+                保存为选题
+              </Button>
             </div>
           </div>
         )}

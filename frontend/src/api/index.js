@@ -68,7 +68,12 @@ export const aiApi = {
   refine: (data) => api.post('/ai/refine', data, {
     timeout: 60000 // AI 调用可能需要较长时间
   }),
-  
+
+  // 批量提炼素材
+  batchRefine: (data) => api.post('/refine/batch', data, {
+    timeout: 90000 // 批量提炼可能需要更长时间
+  }),
+
   // 获取提示词列表
   getPrompts: () => api.get('/prompts')
 }
@@ -78,18 +83,23 @@ export const aiApi = {
 export const topicApi = {
   // 创建选题
   create: (data) => api.post('/topics', data),
-  
+
   // 获取选题列表
   getList: (params) => api.get('/topics', { params }),
-  
+
   // 获取选题详情
   getDetail: (id) => api.get(`/topics/${id}`),
-  
+
   // 更新选题
   update: (id, data) => api.put(`/topics/${id}`, data),
-  
+
   // 删除选题
-  delete: (id) => api.delete(`/topics/${id}`)
+  delete: (id) => api.delete(`/topics/${id}`),
+
+  // 生成选题灵感
+  generateInspirations: (data) => api.post('/topics/inspiration', data, {
+    timeout: 90000 // AI 分析可能需要较长时间
+  })
 }
 
 export default api
