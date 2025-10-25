@@ -1,6 +1,7 @@
 /**
  * Materials.jsx - 素材库页面（增强版）
  * 新增功能：选题灵感 + 批量提炼
+ * 更新时间：2025-10-25 18:20
  */
 
 import { useState, useEffect } from 'react'
