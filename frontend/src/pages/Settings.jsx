@@ -124,7 +124,7 @@ export default function Settings() {
   }
 
   return (
-    <div style={{ maxWidth: 1600, margin: '0 auto', padding: '40px 20px' }}>
+    <div style={{ maxWidth: '90%', margin: '0 auto', padding: '40px 20px' }}>
       <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 32 }}>
         ⚙️ 全局设置
       </h1>

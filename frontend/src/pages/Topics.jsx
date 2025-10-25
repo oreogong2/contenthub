@@ -121,7 +121,7 @@ export default function Topics() {
   }
 
   return (
-    <div style={{ maxWidth: 1600, margin: '0 auto', padding: '40px 20px' }}>
+    <div style={{ maxWidth: '90%', margin: '0 auto', padding: '40px 20px' }}>
       {/* 头部 */}
       <div style={{ marginBottom: 32 }}>
         <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 12 }}>

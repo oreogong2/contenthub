@@ -181,7 +181,7 @@ export default function TopicEdit() {
   }
 
   return (
-    <div style={{ maxWidth: 1600, margin: '0 auto', padding: '40px 20px' }}>
+    <div style={{ maxWidth: '90%', margin: '0 auto', padding: '40px 20px' }}>
       {/* 返回按钮 */}
       <Button
         icon={<ArrowLeftOutlined />}

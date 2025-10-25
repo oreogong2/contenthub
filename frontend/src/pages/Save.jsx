@@ -147,7 +147,7 @@ export default function Save() {
   }
 
   return (
-    <div style={{ maxWidth: 1600, margin: '0 auto', padding: '40px 20px' }}>
+    <div style={{ maxWidth: '90%', margin: '0 auto', padding: '40px 20px' }}>
       <Card 
         title={<span style={{ fontSize: 20, fontWeight: 700 }}>💾 保存为选题</span>}
       >

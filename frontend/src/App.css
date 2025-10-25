@@ -1,12 +1,20 @@
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* 全局样式优化 */
+body {
+  margin: 0;
+  padding: 0;
+  background: linear-gradient(135deg, #1a1f35 0%, #0f1419 100%);
+  min-height: 100vh;
+  color: #e5e7eb;
 }
 
 .App {
-  padding: 2rem;
+  width: 100%;
+  min-height: 100vh;
 }
 
 h1 {

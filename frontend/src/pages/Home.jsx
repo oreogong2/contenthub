@@ -200,7 +200,7 @@ export default function Home() {
   }
 
   return (
-    <div style={{ maxWidth: 1600, margin: '0 auto', padding: '40px 20px' }}>
+    <div style={{ maxWidth: '90%', margin: '0 auto', padding: '40px 20px' }}>
       <Card
         title={
           <div style={{ fontSize: 24, fontWeight: 700 }}>
