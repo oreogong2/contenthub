@@ -4,8 +4,8 @@
  */
 
 import { useState, useEffect } from 'react'
-import { Card, Select, Input, Button, Space, Tag, message, Divider, Alert, List, Modal } from 'antd'
-import { SaveOutlined, PlusOutlined, EyeInvisibleOutlined, EyeOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { Card, Select, Input, Button, Space, Tag, message, Divider, Alert, List, Modal, Table, Statistic, Row, Col } from 'antd'
+import { SaveOutlined, PlusOutlined, EyeInvisibleOutlined, EyeOutlined, EditOutlined, DeleteOutlined, BarChartOutlined, DollarOutlined } from '@ant-design/icons'
 import axios from 'axios'
 
 const { TextArea } = Input
@@ -35,10 +35,20 @@ export default function Settings() {
     content: '',
     description: ''
   })
+  
+  // 使用统计
+  const [usageStats, setUsageStats] = useState({
+    totalRequests: 0,
+    totalTokens: 0,
+    totalCost: '$0.0000',
+    byModel: [],
+    recentDays: []
+  })
 
   // 加载配置
   useEffect(() => {
     loadConfigs()
+    loadUsageStats()
   }, [])
 
   const loadConfigs = async () => {
@@ -231,6 +241,53 @@ export default function Settings() {
         message.success('提示词已删除')
       }
     })
+  }
+
+  // 加载使用统计
+  const loadUsageStats = () => {
+    try {
+      const saved = localStorage.getItem('contenthub_usage')
+      if (saved) {
+        const stats = JSON.parse(saved)
+        
+        // 计算总费用
+        const totalCost = Object.values(stats.byModel || {})
+          .reduce((sum, model) => sum + (model.cost || 0), 0)
+        
+        // 格式化费用
+        const formatCost = (cost) => {
+          if (cost < 0.01) {
+            return `$${(cost * 100).toFixed(2)}¢`
+          }
+          return `$${cost.toFixed(4)}`
+        }
+        
+        setUsageStats({
+          totalRequests: stats.totalRequests || 0,
+          totalTokens: stats.totalTokens || 0,
+          totalCost: formatCost(totalCost),
+          byModel: Object.entries(stats.byModel || {}).map(([model, data]) => ({
+            model,
+            requests: data.requests || 0,
+            tokens: data.tokens || 0,
+            cost: formatCost(data.cost || 0),
+            percentage: stats.totalRequests > 0 ? 
+              ((data.requests / stats.totalRequests) * 100).toFixed(1) : 0
+          })),
+          recentDays: Object.entries(stats.dailyUsage || {})
+            .sort(([a], [b]) => b.localeCompare(a))
+            .slice(0, 7)
+            .map(([date, data]) => ({
+              date,
+              requests: data.requests || 0,
+              tokens: data.tokens || 0,
+              cost: formatCost(data.cost || 0)
+            }))
+        })
+      }
+    } catch (error) {
+      console.error('加载使用统计失败:', error)
+    }
   }
 
   return (
@@ -480,6 +537,157 @@ export default function Settings() {
                 </List.Item>
               )}
             />
+          </Space>
+        </Card>
+
+        {/* 使用统计 */}
+        <Card
+          title={<span style={{ fontSize: 18, fontWeight: 600 }}>📊 使用统计</span>}
+          loading={loading}
+          extra={
+            <Button
+              icon={<BarChartOutlined />}
+              onClick={loadUsageStats}
+            >
+              刷新统计
+            </Button>
+          }
+        >
+          <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            {/* 总体统计 */}
+            <Row gutter={16}>
+              <Col span={6}>
+                <Statistic
+                  title="总请求数"
+                  value={usageStats.totalRequests}
+                  prefix="📞"
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title="总 Token 数"
+                  value={usageStats.totalTokens}
+                  prefix="🔢"
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title="总费用"
+                  value={usageStats.totalCost}
+                  prefix={<DollarOutlined />}
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title="平均费用/次"
+                  value={usageStats.totalRequests > 0 ? 
+                    `$${(parseFloat(usageStats.totalCost.replace('$', '')) / usageStats.totalRequests).toFixed(4)}` : 
+                    '$0.0000'
+                  }
+                  prefix="💰"
+                />
+              </Col>
+            </Row>
+
+            {/* 按模型统计 */}
+            {usageStats.byModel.length > 0 && (
+              <div>
+                <h4 style={{ marginBottom: 16, color: '#d1d5db' }}>按模型统计</h4>
+                <Table
+                  dataSource={usageStats.byModel}
+                  columns={[
+                    {
+                      title: '模型',
+                      dataIndex: 'model',
+                      key: 'model',
+                      render: (model) => (
+                        <Tag color="blue">{model}</Tag>
+                      )
+                    },
+                    {
+                      title: '请求数',
+                      dataIndex: 'requests',
+                      key: 'requests',
+                      render: (value) => `${value} 次`
+                    },
+                    {
+                      title: 'Token 数',
+                      dataIndex: 'tokens',
+                      key: 'tokens',
+                      render: (value) => value.toLocaleString()
+                    },
+                    {
+                      title: '费用',
+                      dataIndex: 'cost',
+                      key: 'cost',
+                      render: (value) => (
+                        <span style={{ color: '#10b981', fontWeight: 600 }}>
+                          {value}
+                        </span>
+                      )
+                    },
+                    {
+                      title: '占比',
+                      dataIndex: 'percentage',
+                      key: 'percentage',
+                      render: (value) => `${value}%`
+                    }
+                  ]}
+                  pagination={false}
+                  size="small"
+                />
+              </div>
+            )}
+
+            {/* 最近7天使用情况 */}
+            {usageStats.recentDays.length > 0 && (
+              <div>
+                <h4 style={{ marginBottom: 16, color: '#d1d5db' }}>最近7天使用情况</h4>
+                <Table
+                  dataSource={usageStats.recentDays}
+                  columns={[
+                    {
+                      title: '日期',
+                      dataIndex: 'date',
+                      key: 'date',
+                      render: (date) => new Date(date).toLocaleDateString('zh-CN')
+                    },
+                    {
+                      title: '请求数',
+                      dataIndex: 'requests',
+                      key: 'requests',
+                      render: (value) => `${value} 次`
+                    },
+                    {
+                      title: 'Token 数',
+                      dataIndex: 'tokens',
+                      key: 'tokens',
+                      render: (value) => value.toLocaleString()
+                    },
+                    {
+                      title: '费用',
+                      dataIndex: 'cost',
+                      key: 'cost',
+                      render: (value) => (
+                        <span style={{ color: '#10b981', fontWeight: 600 }}>
+                          {value}
+                        </span>
+                      )
+                    }
+                  ]}
+                  pagination={false}
+                  size="small"
+                />
+              </div>
+            )}
+
+            {usageStats.totalRequests === 0 && (
+              <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
+                <BarChartOutlined style={{ fontSize: 48, marginBottom: 16 }} />
+                <p>还没有使用记录</p>
+                <p style={{ fontSize: 14 }}>开始使用 AI 提炼功能后，这里会显示详细的使用统计</p>
+              </div>
+            )}
           </Space>
         </Card>
 
