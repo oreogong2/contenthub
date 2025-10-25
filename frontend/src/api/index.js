@@ -46,9 +46,13 @@ export const materialApi = {
   createText: (data) => api.post('/materials/text', data),
   
   // 上传 PDF 素材
-  uploadPdf: (formData) => api.post('/materials/pdf', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }),
+  uploadPdf: (formData) => {
+    // 注意：FormData 会自动设置 Content-Type，不需要手动设置
+    return api.post('/materials/pdf', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000 // PDF 处理可能需要更长时间
+    })
+  },
   
   // 获取素材详情
   getDetail: (id) => api.get(`/materials/${id}`)

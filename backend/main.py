@@ -56,11 +56,15 @@ async def health_check():
 
 # ========== 素材管理接口 ==========
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from database import get_db
 from schemas import MaterialCreate, MaterialResponse, ApiResponse
 import crud
+import os
+import uuid
+from pdf_service import extract_text_from_pdf, validate_pdf_file
+from config import settings
 
 @app.post("/api/materials/text", response_model=ApiResponse)
 async def create_text_material(
@@ -150,6 +154,100 @@ async def get_material(
         raise
     except Exception as e:
         logger.error(f"获取素材失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.post("/api/materials/pdf", response_model=ApiResponse)
+async def upload_pdf_material(
+    file: UploadFile = File(...),
+    source_type: str = "podcast",
+    title: str = None,
+    db: Session = Depends(get_db)
+):
+    """
+    上传 PDF 素材
+    
+    上传 PDF 文件，自动提取文本内容并保存
+    """
+    logger.info(f"上传 PDF: filename={file.filename}, source={source_type}")
+    
+    try:
+        # 1. 验证文件格式
+        if not file.filename.lower().endswith('.pdf'):
+            logger.warning(f"文件格式错误: {file.filename}")
+            raise HTTPException(status_code=400, detail="仅支持 PDF 格式文件")
+        
+        # 2. 读取文件内容并检查大小
+        file_content = await file.read()
+        file_size = len(file_content)
+        file_size_mb = file_size / (1024 * 1024)
+        
+        logger.info(f"文件大小: {file_size_mb:.2f} MB")
+        
+        if file_size_mb > settings.MAX_FILE_SIZE / (1024 * 1024):
+            logger.warning(f"文件过大: {file_size_mb:.2f} MB")
+            raise HTTPException(status_code=400, detail=f"文件过大，最大支持 50MB")
+        
+        # 3. 确保 uploads 目录存在
+        os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+        
+        # 4. 生成唯一文件名
+        file_ext = os.path.splitext(file.filename)[1]
+        unique_filename = f"{uuid.uuid4()}{file_ext}"
+        file_path = os.path.join(settings.UPLOAD_DIR, unique_filename)
+        
+        # 5. 保存文件
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+        
+        logger.info(f"文件已保存: {file_path}")
+        
+        # 6. 提取 PDF 文本
+        try:
+            extracted_text = extract_text_from_pdf(file_path)
+            word_count = len(extracted_text)
+            logger.info(f"PDF 文本提取成功: {word_count} 字")
+            
+        except Exception as e:
+            # 如果提取失败，删除上传的文件
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            logger.error(f"PDF 文本提取失败: {e}")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"PDF 解析失败: {str(e)}。请确保上传的是文本版 PDF（非扫描版）"
+            )
+        
+        # 7. 保存到数据库
+        material_data = {
+            "title": title or file.filename,
+            "content": extracted_text,
+            "source_type": source_type,
+            "file_name": file.filename
+        }
+        
+        db_material = crud.create_material(db, material_data)
+        
+        logger.info(f"PDF 素材创建成功: id={db_material.id}")
+        
+        # 8. 返回成功响应
+        return ApiResponse(
+            code=200,
+            message="PDF 上传成功",
+            data={
+                "id": db_material.id,
+                "title": db_material.title,
+                "file_name": db_material.file_name,
+                "source_type": db_material.source_type,
+                "word_count": word_count,
+                "file_size_mb": round(file_size_mb, 2),
+                "created_at": db_material.created_at.isoformat()
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"上传 PDF 失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
 if __name__ == "__main__":

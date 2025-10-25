@@ -4,12 +4,14 @@
  */
 
 import { useState } from 'react'
-import { Input, Select, Button, message, Card, Space } from 'antd'
+import { Input, Select, Button, message, Card, Space, Upload, Divider } from 'antd'
+import { InboxOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { materialApi } from '../api'
 import useStore from '../store/useStore'
 
 const { TextArea } = Input
+const { Dragger } = Upload
 
 export default function Home() {
   const navigate = useNavigate()
@@ -21,6 +23,8 @@ export default function Home() {
     content: '',
     source_type: 'twitter'
   })
+  const [pdfFile, setPdfFile] = useState(null)
+  const [pdfInfo, setPdfInfo] = useState(null)
 
   // 来源平台选项
   const sourceOptions = [
@@ -46,7 +50,103 @@ export default function Home() {
       content: '',
       source_type: 'twitter'
     })
+    setPdfFile(null)
+    setPdfInfo(null)
     message.info('表单已清空')
+  }
+
+  // PDF 上传配置
+  const uploadProps = {
+    name: 'file',
+    multiple: false,
+    accept: '.pdf',
+    maxCount: 1,
+    beforeUpload: (file) => {
+      // 验证文件类型
+      const isPDF = file.type === 'application/pdf' || file.name.endsWith('.pdf')
+      if (!isPDF) {
+        message.error('只能上传 PDF 文件！')
+        return Upload.LIST_IGNORE
+      }
+      
+      // 验证文件大小（50MB）
+      const isLt50M = file.size / 1024 / 1024 < 50
+      if (!isLt50M) {
+        message.error('文件大小不能超过 50MB！')
+        return Upload.LIST_IGNORE
+      }
+      
+      // 保存文件到状态，但不自动上传
+      setPdfFile(file)
+      setPdfInfo({
+        name: file.name,
+        size: (file.size / 1024 / 1024).toFixed(2) + ' MB'
+      })
+      
+      // 清空文本输入（二选一）
+      setFormData(prev => ({ ...prev, content: '' }))
+      
+      message.success(`${file.name} 已选择`)
+      return false // 阻止自动上传
+    },
+    onRemove: () => {
+      setPdfFile(null)
+      setPdfInfo(null)
+    }
+  }
+
+  // 提交 PDF
+  const handlePdfSubmit = async () => {
+    if (!pdfFile) {
+      message.error('请先选择 PDF 文件')
+      return
+    }
+
+    setLoading(true)
+    
+    try {
+      // 创建 FormData
+      const formDataObj = new FormData()
+      formDataObj.append('file', pdfFile)
+      formDataObj.append('source_type', formData.source_type)
+      if (formData.title) {
+        formDataObj.append('title', formData.title)
+      }
+
+      console.log('上传 PDF:', pdfFile.name)
+      
+      // 调用API上传PDF
+      const response = await materialApi.uploadPdf(formDataObj)
+      
+      console.log('API响应:', response)
+      
+      if (response.code === 200) {
+        message.success(`PDF 上传成功！已提取 ${response.data.word_count} 字`)
+        
+        // 保存素材信息到状态
+        setCurrentMaterial({
+          id: response.data.id,
+          title: response.data.title,
+          content: `（从 PDF 提取的文本，共 ${response.data.word_count} 字）`,
+          source_type: response.data.source_type,
+          file_name: response.data.file_name,
+          word_count: response.data.word_count
+        })
+        
+        // 跳转到提炼页面
+        setTimeout(() => {
+          navigate('/refine')
+        }, 500)
+      } else {
+        message.error(response.message || 'PDF 上传失败')
+      }
+      
+    } catch (error) {
+      console.error('上传失败:', error)
+      message.error(error.message || 'PDF 上传失败，请重试')
+    } finally {
+      setLoading(false)
+    }
   }
 
   // 提交素材
@@ -145,33 +245,105 @@ export default function Home() {
             </div>
             <TextArea
               size="large"
-              rows={12}
+              rows={8}
               placeholder="直接粘贴文本内容...&#10;&#10;例如：&#10;• 推特长推的完整内容&#10;• 小红书爆款笔记文案&#10;• 播客逐字稿的精彩片段&#10;&#10;粘贴后点击下方按钮进入 AI 提炼"
               value={formData.content}
               onChange={(e) => handleChange('content', e.target.value)}
               maxLength={50000}
               showCount
+              disabled={pdfFile !== null}
             />
+            {formData.content && (
+              <Space style={{ width: '100%', justifyContent: 'flex-end', marginTop: 16 }}>
+                <Button size="large" onClick={handleClear}>
+                  🗑️ 清空
+                </Button>
+                <Button
+                  type="primary"
+                  size="large"
+                  loading={loading}
+                  onClick={handleSubmit}
+                  style={{
+                    background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
+                    border: 'none'
+                  }}
+                >
+                  🤖 下一步：AI 提炼 →
+                </Button>
+              </Space>
+            )}
           </div>
 
-          {/* 按钮组 */}
-          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Button size="large" onClick={handleClear}>
-              🗑️ 清空
-            </Button>
-            <Button
-              type="primary"
-              size="large"
-              loading={loading}
-              onClick={handleSubmit}
+          {/* 分隔线 */}
+          <Divider style={{ borderColor: 'rgba(255, 255, 255, 0.1)' }}>
+            <span style={{ color: '#6b7280', fontWeight: 600 }}>OR</span>
+          </Divider>
+
+          {/* PDF 上传 */}
+          <div>
+            <div style={{ marginBottom: 12, fontWeight: 600, color: '#d1d5db' }}>
+              方式 2 · 上传 PDF
+            </div>
+            <Dragger 
+              {...uploadProps}
+              disabled={formData.content.trim().length > 0}
               style={{
-                background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
-                border: 'none'
+                background: 'rgba(17, 24, 39, 0.4)',
+                borderColor: 'rgba(59, 130, 246, 0.3)',
+                borderRadius: 12
               }}
             >
-              🤖 下一步：AI 提炼 →
-            </Button>
-          </Space>
+              <p className="ant-upload-drag-icon">
+                <InboxOutlined style={{ color: '#3b82f6', fontSize: 64 }} />
+              </p>
+              <p className="ant-upload-text" style={{ color: '#e8eaed', fontSize: 16, fontWeight: 600 }}>
+                点击或拖拽 PDF 文件到此区域
+              </p>
+              <p className="ant-upload-hint" style={{ color: '#9ca3af' }}>
+                支持播客逐字稿、文章等 PDF 文档<br />
+                系统会自动提取文字内容<br />
+                <span style={{ color: '#f59e0b' }}>⚠️ 仅支持文本版 PDF，不支持扫描版</span>
+              </p>
+            </Dragger>
+            
+            {pdfInfo && (
+              <div style={{ 
+                marginTop: 16, 
+                padding: 16, 
+                background: 'rgba(16, 185, 129, 0.15)',
+                borderRadius: 12,
+                border: '1px solid rgba(16, 185, 129, 0.3)'
+              }}>
+                <div style={{ color: '#6ee7b7', marginBottom: 8 }}>
+                  ✅ PDF 已选择
+                </div>
+                <div style={{ color: '#d1d5db' }}>
+                  <strong>文件名：</strong> {pdfInfo.name}<br />
+                  <strong>大小：</strong> {pdfInfo.size}
+                </div>
+              </div>
+            )}
+            
+            {pdfFile && (
+              <Space style={{ width: '100%', justifyContent: 'flex-end', marginTop: 16 }}>
+                <Button size="large" onClick={handleClear}>
+                  🗑️ 取消
+                </Button>
+                <Button
+                  type="primary"
+                  size="large"
+                  loading={loading}
+                  onClick={handlePdfSubmit}
+                  style={{
+                    background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
+                    border: 'none'
+                  }}
+                >
+                  📄 上传并提取文本 →
+                </Button>
+              </Space>
+            )}
+          </div>
         </Space>
       </Card>
 
