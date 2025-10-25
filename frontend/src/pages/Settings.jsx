@@ -18,6 +18,7 @@ export default function Settings() {
   const [aiModel, setAiModel] = useState('gpt-4')
   const [openaiKey, setOpenaiKey] = useState('')
   const [claudeKey, setClaudeKey] = useState('')
+  const [deepseekKey, setDeepseekKey] = useState('')
   const [presetTags, setPresetTags] = useState([])
   
   // UI 状态
@@ -44,6 +45,7 @@ export default function Settings() {
         setAiModel(data.default_ai_model || 'gpt-4')
         setOpenaiKey(data.openai_api_key || '')
         setClaudeKey(data.claude_api_key || '')
+        setDeepseekKey(data.deepseek_api_key || '')
         
         // 解析标签
         try {
@@ -73,6 +75,7 @@ export default function Settings() {
         default_ai_model: aiModel,
         openai_api_key: openaiKey,
         claude_api_key: claudeKey,
+        deepseek_api_key: deepseekKey,
         preset_tags: JSON.stringify(presetTags)
       }
       
@@ -121,7 +124,7 @@ export default function Settings() {
   }
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 20px' }}>
+    <div style={{ maxWidth: 1600, margin: '0 auto', padding: '40px 20px' }}>
       <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 32 }}>
         ⚙️ 全局设置
       </h1>
@@ -150,8 +153,9 @@ export default function Settings() {
                 onChange={setAiModel}
                 style={{ width: '100%', maxWidth: 400 }}
                 options={[
-                  { value: 'gpt-4', label: 'GPT-4（推荐）- 效果最好但较贵' },
+                  { value: 'gpt-4', label: 'GPT-4 - 效果最好但较贵' },
                   { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo - 性价比高' },
+                  { value: 'deepseek-chat', label: 'DeepSeek Chat - 最便宜（推荐）' },
                   { value: 'claude-3', label: 'Claude 3 - 待支持' }
                 ]}
               />
@@ -172,6 +176,24 @@ export default function Settings() {
               />
               <div style={{ color: '#888', fontSize: 13, marginTop: 8 }}>
                 从 <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">OpenAI 官网</a> 获取
+              </div>
+            </div>
+
+            {/* DeepSeek API Key */}
+            <div>
+              <div style={{ marginBottom: 12, fontWeight: 600, color: '#d1d5db' }}>
+                DeepSeek API Key <span style={{ color: '#888', fontSize: 13 }}>(推荐，价格便宜)</span>
+              </div>
+              <Input.Password
+                size="large"
+                placeholder="sk-..."
+                value={deepseekKey}
+                onChange={(e) => setDeepseekKey(e.target.value)}
+                iconRender={(visible) => (visible ? <EyeOutlined /> : <EyeInvisibleOutlined />)}
+                style={{ maxWidth: 600 }}
+              />
+              <div style={{ color: '#888', fontSize: 13, marginTop: 8 }}>
+                从 <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer">DeepSeek 官网</a> 获取 | 价格仅为 GPT-4 的 1/50
               </div>
             </div>
 

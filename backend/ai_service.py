@@ -53,6 +53,8 @@ def refine_content(content: str, prompt: str, model: str = "gpt-4", api_key: str
         return _call_openai(content, prompt, model, api_key)
     elif model.startswith("claude"):
         return _call_claude(content, prompt, model, api_key)
+    elif model.startswith("deepseek"):
+        return _call_deepseek(content, prompt, model, api_key)
     else:
         logger.error(f"不支持的模型: {model}")
         raise ValueError(f"不支持的模型: {model}")
@@ -169,6 +171,94 @@ def _call_claude(content: str, prompt: str, model: str, api_key: str = None):
     # 这里暂时返回提示，因为 Claude SDK 的具体实现可能不同
     logger.warning("Claude API 暂未实现，请使用 OpenAI")
     raise Exception("Claude API 暂未实现，请使用 OpenAI 模型")
+
+def _call_deepseek(content: str, prompt: str, model: str, api_key: str = None):
+    """
+    调用 DeepSeek API
+    
+    DeepSeek API 兼容 OpenAI 格式，价格便宜
+    支持的模型：
+    - deepseek-chat
+    """
+    try:
+        from openai import OpenAI
+    except ImportError:
+        logger.error("OpenAI SDK 未安装")
+        raise Exception("OpenAI SDK 未安装，请运行: pip install openai")
+    
+    # 获取 API Key
+    if not api_key:
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+    
+    if not api_key:
+        logger.error("未配置 DeepSeek API Key")
+        raise Exception("未配置 DeepSeek API Key，请在设置中配置或设置环境变量 DEEPSEEK_API_KEY")
+    
+    logger.info(f"使用 DeepSeek API: model={model}")
+    
+    # 创建客户端，指向 DeepSeek API
+    client = OpenAI(
+        api_key=api_key,
+        base_url="https://api.deepseek.com"
+    )
+    
+    # 组合完整的提示
+    full_prompt = f"{prompt}\n\n以下是需要提炼的内容：\n\n{content}"
+    
+    # 重试机制
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"调用 DeepSeek API (尝试 {attempt + 1}/{max_retries})")
+            
+            # 调用 API
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "你是一个专业的内容提炼助手，擅长从长文本中提取关键信息，帮助短视频创作者快速获取选题灵感。"
+                    },
+                    {
+                        "role": "user",
+                        "content": full_prompt
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=2000,
+                timeout=30.0  # 30秒超时
+            )
+            
+            # 提取结果
+            refined_text = response.choices[0].message.content
+            tokens_used = response.usage.total_tokens
+            
+            # 估算费用
+            # DeepSeek: $0.14/1M tokens (input) + $0.28/1M tokens (output)
+            # 为了简化，使用平均值 $0.21/1M tokens
+            cost_usd = (tokens_used / 1_000_000) * 0.21
+            
+            logger.info(f"DeepSeek 调用成功: tokens={tokens_used}, cost=${cost_usd:.4f}")
+            
+            return {
+                'refined_text': refined_text,
+                'model_used': model,
+                'tokens_used': tokens_used,
+                'cost_usd': round(cost_usd, 4)
+            }
+            
+        except Exception as e:
+            logger.warning(f"DeepSeek 调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+            
+            if attempt == max_retries - 1:
+                # 最后一次尝试失败
+                logger.error(f"DeepSeek 调用最终失败: {e}")
+                raise Exception(f"AI 调用失败: {str(e)}")
+            
+            # 指数退避
+            sleep_time = 2 ** attempt
+            logger.info(f"等待 {sleep_time} 秒后重试...")
+            time.sleep(sleep_time)
 
 def get_default_prompts():
     """
