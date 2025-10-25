@@ -1,0 +1,14 @@
+{
+  "name": "contenthub",
+  "version": "1.0.0",
+  "description": "短视频选题和素材管理工具",
+  "scripts": {
+    "mock": "node mock-server.js",
+    "dev": "npm run mock"
+  },
+  "devDependencies": {
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0"
+  }
+}
