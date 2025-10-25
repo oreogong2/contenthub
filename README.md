@@ -1,292 +1,270 @@
-# ContentHub - 短视频选题素材管理器
+# 🎬 ContentHub - 短视频选题和素材管理工具
 
-一个轻量级的素材管理工具，帮助短视频创作者统一管理素材、AI 提炼内容、高效检索复用。
+> AI 驱动的创意内容平台，让内容创作更高效
 
-**当前版本：v1.0.0** ✅ **开发完成**
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![React 18](https://img.shields.io/badge/React-18-blue.svg)](https://reactjs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
 
----
+## ✨ 项目简介
 
-## ✨ 核心功能
+ContentHub 是一个专为短视频创作者设计的智能内容管理平台，通过 AI 技术帮助创作者：
 
-- 📝 **素材管理** - 支持文本粘贴和 PDF 上传（最大50MB）
-- 🤖 **AI 提炼** - 4种预设提示词，智能提炼内容
-- 🏷️ **标签系统** - 灵活的标签分类和管理，支持自定义标签
-- 🔍 **智能检索** - 标签筛选 + 关键词搜索 + 分页浏览
-- ✏️ **选题管理** - 查看、编辑、删除选题
-- ⚙️ **配置简单** - 使用自己的 AI API Key，支持 GPT-4 和 GPT-3.5
-- 🎨 **美观界面** - 深色主题 + 玻璃态设计 + 响应式布局
+- 📚 **素材管理** - 统一管理文本、PDF 等各类素材
+- 🤖 **AI 提炼** - 智能分析素材，生成优质选题
+- 💡 **创意灵感** - 多角度挖掘内容价值
+- 📊 **数据统计** - 实时监控使用情况和费用
+- 🎯 **选题库** - 系统化管理创作内容
 
----
+## 🚀 核心功能
 
-## 🎥 产品演示
+### 📝 素材管理
+- **文本素材** - 支持长文本输入（最多 50,000 字）
+- **PDF 解析** - 自动提取 PDF 文档内容
+- **来源标记** - 支持 Twitter、小红书、播客等多种平台
+- **素材库** - 瀑布流布局，支持搜索和筛选
 
-**完整工作流：**
-1. 添加素材（文本/PDF）
-2. 选择提示词，AI 智能提炼
-3. 编辑并保存为选题
-4. 在选题库中管理和检索
+### 🤖 AI 智能提炼
+- **多模型支持** - OpenAI GPT-4/3.5、DeepSeek、Claude
+- **自定义提示词** - 灵活配置 AI 指令
+- **费用控制** - 实时统计使用量和成本
+- **批量处理** - 支持多素材组合提炼
 
----
+### 💡 创意功能
+- **选题灵感** - AI 自动推荐选题方向
+- **组合创新** - 多素材融合生成新内容
+- **智能标签** - 自动分类和标记
+- **趋势分析** - 结合热点话题
+
+### 📊 数据管理
+- **使用统计** - 详细的 API 调用记录
+- **费用监控** - 实时费用计算和预警
+- **历史记录** - 完整的操作日志
+- **导出功能** - 支持数据导出
+
+## 🛠️ 技术栈
+
+### 后端
+- **框架**: FastAPI 0.104.1
+- **数据库**: SQLite + SQLAlchemy 2.0.23
+- **AI 服务**: OpenAI API, DeepSeek API, Claude API
+- **文件处理**: pdfplumber 0.10.3
+- **数据验证**: Pydantic 2.5.0
+
+### 前端
+- **框架**: React 18 + Vite
+- **UI 库**: Ant Design 5
+- **状态管理**: Zustand
+- **路由**: React Router DOM
+- **HTTP 客户端**: Axios
+
+### 开发工具
+- **版本控制**: Git
+- **包管理**: npm, pip
+- **开发服务器**: Vite Dev Server, Uvicorn
+- **API 文档**: FastAPI Swagger
+
+## 📦 项目结构
+
+```
+contenthub/
+├── backend/                 # 后端服务
+│   ├── main.py             # FastAPI 主程序
+│   ├── models.py           # 数据模型
+│   ├── crud.py             # 数据库操作
+│   ├── ai_service.py       # AI 服务
+│   ├── pdf_service.py      # PDF 处理
+│   ├── database.py         # 数据库连接
+│   ├── schemas.py          # 数据验证
+│   ├── config.py           # 配置管理
+│   ├── utils.py            # 工具函数
+│   ├── init_db.py          # 数据库初始化
+│   └── requirements.txt    # Python 依赖
+├── frontend/               # 前端应用
+│   ├── src/
+│   │   ├── pages/          # 页面组件
+│   │   ├── components/     # 通用组件
+│   │   ├── api/            # API 调用
+│   │   ├── store/          # 状态管理
+│   │   └── App.jsx         # 主应用
+│   ├── package.json        # 前端依赖
+│   └── vite.config.js      # Vite 配置
+├── mock-server.js          # Mock API 服务器
+├── usage-tracker.js         # 使用统计
+├── start.sh                # 启动脚本
+└── README.md               # 项目说明
+```
 
 ## 🚀 快速开始
 
 ### 环境要求
-
-**必需：**
-- Python 3.8+
+- Python 3.9+
 - Node.js 16+
-- OpenAI API Key（用于 AI 提炼功能）
-
-**推荐工具：**
-- VSCode 或 Cursor
 - Git
-
----
-
-## 📂 项目结构
-
-```
-contenthub/
-├── backend/              # Python 后端
-│   ├── main.py          # FastAPI 主程序
-│   ├── models.py        # 数据库模型
-│   ├── crud.py          # 数据库操作
-│   └── ...
-├── frontend/             # React 前端
-│   ├── src/
-│   │   ├── pages/       # 页面组件
-│   │   ├── components/  # 通用组件
-│   │   └── api/         # API 调用
-│   └── ...
-├── docs/                 # 📁 开发文档
-├── prototype/            # 📁 交互原型
-└── README.md            # 本文件
-```
-
----
-
-## 🛠️ 开发流程
 
 ### 安装步骤
 
+1. **克隆项目**
 ```bash
-# 1. 克隆项目
-git clone <repository-url>
+git clone https://github.com/your-username/contenthub.git
 cd contenthub
+```
 
-# 2. 后端设置
+2. **安装后端依赖**
+```bash
 cd backend
-python3 -m venv venv
+python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+```
 
-# 3. 初始化数据库（首次运行）
+3. **初始化数据库**
+```bash
 python init_db.py
+```
 
-# 4. 前端设置
+4. **安装前端依赖**
+```bash
 cd ../frontend
 npm install
 ```
 
-### 启动应用
+5. **启动服务**
 
+**方式一：使用启动脚本**
 ```bash
-# 1. 启动后端（终端 1）
+cd ..
+chmod +x start.sh
+./start.sh
+```
+
+**方式二：手动启动**
+```bash
+# 终端1：启动后端
 cd backend
 source venv/bin/activate
 uvicorn main:app --reload
-# 访问 http://localhost:8000/docs 查看 API 文档
 
-# 2. 启动前端（终端 2）
+# 终端2：启动前端
 cd frontend
 npm run dev
-# 访问 http://localhost:3000
 ```
 
-### 配置 API Key
+6. **访问应用**
+- 前端：http://localhost:3000
+- 后端 API：http://localhost:8000
+- API 文档：http://localhost:8000/docs
 
-1. 访问 http://localhost:3000
-2. 点击右上角 **⚙️ 设置**
-3. 输入 **OpenAI API Key**
-4. 点击 **保存设置**
-5. 开始使用！
+### Mock 模式（无需 API Key）
 
----
+如果暂时没有 AI API Key，可以使用 Mock 模式：
 
-## 📚 文档
+```bash
+# 启动 Mock 服务器
+npm run mock
 
-- **[部署指南](../README_DEPLOYMENT.md)** - 详细的部署和配置说明
-- **[用户指南](../USER_GUIDE.md)** - 完整的功能使用指南
-- **[API 文档](http://localhost:8000/docs)** - 在线 API 文档（启动后端后访问）
+# 启动前端
+cd frontend
+npm run dev
+```
 
----
+## 🔧 配置说明
 
-## 📋 开发进度
+### API Key 配置
 
-### ✅ Milestone 1：核心功能（已完成）
+1. **OpenAI API Key**
+   - 获取地址：https://platform.openai.com/api-keys
+   - 推荐模型：GPT-3.5-turbo（性价比高）
 
-- [x] #1 项目初始化
-- [x] #2 数据库初始化
-- [x] #3 文本素材添加
-- [x] #4 PDF 上传和解析
-- [x] #5 AI 提炼功能
-- [x] #6 选题保存功能
-- [x] #7 选题列表展示
+2. **DeepSeek API Key**（推荐）
+   - 获取地址：https://platform.deepseek.com/api_keys
+   - 价格：仅为 GPT-4 的 1/50
 
-### ✅ Milestone 2：完善功能（已完成）
+3. **Claude API Key**（可选）
+   - 获取地址：https://console.anthropic.com/
 
-- [x] #8 选题详情页
-- [x] #9 选题编辑/删除
-- [x] #10 全局设置
-- [x] #11 系统优化
+### 环境变量
 
-**项目状态：** 🎉 **开发完成！**
+创建 `backend/.env` 文件：
+```env
+OPENAI_API_KEY=your_openai_key_here
+DEEPSEEK_API_KEY=your_deepseek_key_here
+CLAUDE_API_KEY=your_claude_key_here
+DEFAULT_AI_MODEL=gpt-3.5-turbo
+```
 
----
+## 📊 使用统计
 
-## 📊 项目统计
-
-- **总代码量：** 3000+ 行
-- **开发时间：** 完整 2 个 Milestone
-- **Git 提交：** 10+ 次
-- **API 接口：** 12 个
-- **前端页面：** 7 个
-- **数据库表：** 3 张
-
----
-
-## 🔧 技术栈
-
-### 后端
-- **Python 3.9+**
-- **FastAPI** - Web 框架
-- **SQLAlchemy** - ORM
-- **SQLite** - 数据库
-- **pdfplumber** - PDF 解析
-- **OpenAI SDK** - AI 调用
-
-### 前端
-- **React 18**
-- **Vite** - 构建工具
-- **Ant Design 5** - UI 组件库
-- **Zustand** - 状态管理
-- **Axios** - HTTP 客户端
-
----
+应用内置使用统计功能，帮助你：
+- 📈 监控 API 使用量
+- 💰 控制费用支出
+- 📊 分析使用模式
+- 🎯 优化使用策略
 
 ## 🎯 使用场景
 
-### 适合谁使用？
-- 📱 短视频创作者
-- ✍️ 内容运营者
-- 🎬 自媒体工作者
-- 📝 知识分享者
+### 内容创作者
+- 管理日常收集的素材
+- 快速生成选题灵感
+- 批量处理内容提炼
 
-### 解决什么问题？
-- ✅ 素材分散，不好管理
-- ✅ 手动提炼费时费力
-- ✅ 缺少系统的选题库
-- ✅ 重复内容难以复用
+### 自媒体团队
+- 统一素材管理
+- 协作内容创作
+- 数据驱动决策
 
----
+### 内容机构
+- 大规模内容生产
+- 质量控制
+- 成本控制
 
-## 🌟 核心特性
+## 🔄 开发计划
 
-### AI 提炼
-- 4 个预设提示词：提取观点、生成脚本、拍摄角度、提炼标题
-- 支持 GPT-4 和 GPT-3.5-turbo
-- 显示 Tokens 使用量和费用估算
-- 提炼结果可编辑
+### 已完成功能 ✅
+- [x] 素材管理（文本、PDF）
+- [x] AI 提炼功能
+- [x] 选题管理
+- [x] 使用统计
+- [x] 提示词管理
+- [x] 设置配置
 
-### 素材管理
-- 文本素材：最长 50,000 字
-- PDF 素材：最大 50MB，自动提取文字
-- 支持多种来源：推特、小红书、播客、抖音等
-
-### 选题管理
-- 完整的选题库
-- 搜索 + 标签筛选
-- 分页浏览（每页20条）
-- 查看、编辑、删除操作
-
-### 用户体验
-- 🎨 深色主题，视觉舒适
-- ✨ 玻璃态设计，现代美观
-- 📱 响应式布局，适配多端
-- ⚡ 流畅动画，交互友好
-
----
-
-## 🔧 技术亮点
-
-- **后端：** FastAPI + SQLAlchemy ORM + pdfplumber
-- **前端：** React 18 + Vite + Ant Design 5 + Zustand
-- **数据库：** SQLite（MVP），易于迁移到 PostgreSQL
-- **AI 集成：** OpenAI API，支持多模型切换
-- **文件处理：** pdfplumber，支持中文 PDF
-
----
-
-## 📊 API 接口
-
-### 素材管理
-- `POST /api/materials/text` - 创建文本素材
-- `POST /api/materials/pdf` - 上传 PDF 素材
-- `GET /api/materials/{id}` - 获取素材详情
-
-### AI 提炼
-- `POST /api/ai/refine` - AI 内容提炼
-- `GET /api/prompts` - 获取提示词列表
-
-### 选题管理
-- `POST /api/topics` - 创建选题
-- `GET /api/topics` - 获取选题列表（支持分页、搜索、筛选）
-- `GET /api/topics/{id}` - 获取选题详情
-- `PUT /api/topics/{id}` - 更新选题
-- `DELETE /api/topics/{id}` - 删除选题
-
-### 配置管理
-- `GET /api/configs` - 获取配置
-- `PUT /api/configs` - 更新配置
-
-完整 API 文档：http://localhost:8000/docs
-
----
+### 计划功能 🚧
+- [ ] 选题灵感生成
+- [ ] 多素材组合提炼
+- [ ] 内容模板系统
+- [ ] 团队协作功能
+- [ ] 数据导出
+- [ ] 移动端适配
 
 ## 🤝 贡献指南
 
-欢迎贡献！如果您想参与开发：
+欢迎贡献代码！请遵循以下步骤：
 
 1. Fork 项目
-2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'feat: 添加某个功能'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
-
----
-
-## 📝 更新日志
-
-### v1.0.0 (2025-10-25)
-- ✅ 完成所有核心功能
-- ✅ 完成所有完善功能
-- ✅ 完整的文档和部署指南
-
----
+2. 创建功能分支：`git checkout -b feature/AmazingFeature`
+3. 提交更改：`git commit -m 'Add some AmazingFeature'`
+4. 推送分支：`git push origin feature/AmazingFeature`
+5. 提交 Pull Request
 
 ## 📄 许可证
 
-MIT License
+本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
+
+## 🙏 致谢
+
+- [FastAPI](https://fastapi.tiangolo.com/) - 现代、快速的 Web 框架
+- [React](https://reactjs.org/) - 用户界面库
+- [Ant Design](https://ant.design/) - 企业级 UI 设计语言
+- [OpenAI](https://openai.com/) - AI 服务提供商
+- [DeepSeek](https://www.deepseek.com/) - 经济实惠的 AI 服务
+
+## 📞 联系方式
+
+- 项目链接：[https://github.com/your-username/contenthub](https://github.com/your-username/contenthub)
+- 问题反馈：[Issues](https://github.com/your-username/contenthub/issues)
+- 功能建议：[Discussions](https://github.com/your-username/contenthub/discussions)
 
 ---
 
-## 💬 联系我们
-
-- 📧 Email: support@contenthub.com
-- 💬 Issues: 提交 GitHub Issue
-- 📖 文档: 查看完整文档
-
----
-
-**感谢使用 ContentHub！** 🎉
-
+**⭐ 如果这个项目对你有帮助，请给个 Star！**
