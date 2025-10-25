@@ -428,6 +428,245 @@ async def get_prompts():
         logger.error(f"获取提示词失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
+@app.post("/api/topics/inspiration", response_model=ApiResponse)
+async def generate_inspirations(
+    material_ids: list[int] = None,
+    source_type: str = None,
+    count: int = 5,
+    model: str = "gpt-3.5-turbo",
+    api_key: str = None,
+    db: Session = Depends(get_db)
+):
+    """
+    生成选题灵感
+
+    基于现有素材，AI 自动推荐选题方向
+
+    参数:
+        material_ids: 指定素材 ID 列表（可选）
+        source_type: 按来源筛选（可选）
+        count: 生成几个建议（默认 5 个）
+        model: AI 模型
+        api_key: API Key（可选）
+    """
+    logger.info(f"生成选题灵感: material_ids={material_ids}, source_type={source_type}, count={count}")
+
+    try:
+        # 1. 获取素材列表
+        if material_ids:
+            # 根据指定 ID 获取素材
+            materials = []
+            for mat_id in material_ids:
+                material = crud.get_material(db, mat_id)
+                if material:
+                    materials.append(material)
+                else:
+                    logger.warning(f"素材不存在: id={mat_id}")
+
+            if not materials:
+                raise HTTPException(status_code=404, detail="指定的素材不存在")
+        else:
+            # 获取所有素材或按来源筛选
+            from models import Material
+            query = db.query(Material)
+
+            if source_type:
+                query = query.filter(Material.source_type == source_type)
+
+            materials = query.order_by(Material.created_at.desc()).limit(20).all()
+
+            if not materials:
+                raise HTTPException(status_code=404, detail="没有找到素材，请先添加素材")
+
+        logger.info(f"找到 {len(materials)} 个素材用于生成灵感")
+
+        # 2. 准备素材数据
+        materials_data = [
+            {
+                'id': mat.id,
+                'title': mat.title,
+                'content': mat.content,
+                'source_type': mat.source_type
+            }
+            for mat in materials
+        ]
+
+        # 3. 调用 AI 生成灵感
+        from ai_service import generate_topic_inspirations
+
+        try:
+            result = generate_topic_inspirations(
+                materials=materials_data,
+                count=count,
+                model=model,
+                api_key=api_key
+            )
+
+            logger.info(f"生成灵感成功: count={len(result['inspirations'])}, tokens={result['tokens_used']}")
+
+            # 4. 返回结果
+            return ApiResponse(
+                code=200,
+                message="灵感生成成功",
+                data={
+                    "inspirations": result['inspirations'],
+                    "materials_count": len(materials),
+                    "model_used": result['model_used'],
+                    "tokens_used": result['tokens_used'],
+                    "cost_usd": result['cost_usd']
+                }
+            )
+
+        except ValueError as e:
+            logger.error(f"参数错误: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"AI 调用失败: {error_msg}")
+
+            # 友好的错误提示
+            if "API Key" in error_msg or "api_key" in error_msg.lower():
+                raise HTTPException(status_code=401, detail="API Key 未配置或无效，请在设置中配置")
+            elif "timeout" in error_msg.lower():
+                raise HTTPException(status_code=504, detail="AI 服务超时，请稍后重试")
+            else:
+                raise HTTPException(status_code=500, detail=f"灵感生成失败: {error_msg}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"生成灵感失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.post("/api/refine/batch", response_model=ApiResponse)
+async def batch_refine(
+    material_ids: list[int],
+    prompt_id: int = None,
+    custom_prompt: str = None,
+    mode: str = "synthesize",
+    model: str = "gpt-3.5-turbo",
+    api_key: str = None,
+    db: Session = Depends(get_db)
+):
+    """
+    批量提炼多个素材
+
+    支持三种模式：
+    - combine: 整合模式（保留所有信息）
+    - compare: 对比模式（找出异同）
+    - synthesize: 综合模式（生成新观点）
+
+    参数:
+        material_ids: 素材 ID 列表（2-5 个）
+        prompt_id: 提示词 ID（可选）
+        custom_prompt: 自定义提示词（可选）
+        mode: 提炼模式
+        model: AI 模型
+        api_key: API Key（可选）
+    """
+    logger.info(f"批量提炼: material_ids={material_ids}, mode={mode}, count={len(material_ids)}")
+
+    try:
+        # 1. 验证参数
+        if not material_ids or len(material_ids) < 2:
+            raise HTTPException(status_code=400, detail="至少需要选择 2 个素材")
+
+        if len(material_ids) > 5:
+            raise HTTPException(status_code=400, detail="最多支持 5 个素材的批量提炼")
+
+        if mode not in ['combine', 'compare', 'synthesize']:
+            raise HTTPException(status_code=400, detail="模式错误，请选择 combine/compare/synthesize")
+
+        # 2. 获取素材
+        materials = []
+        for mat_id in material_ids:
+            material = crud.get_material(db, mat_id)
+            if material:
+                materials.append(material)
+            else:
+                logger.warning(f"素材不存在: id={mat_id}")
+                raise HTTPException(status_code=404, detail=f"素材 {mat_id} 不存在")
+
+        logger.info(f"找到 {len(materials)} 个素材")
+
+        # 3. 准备提示词
+        prompt_text = ""
+        if custom_prompt:
+            prompt_text = custom_prompt
+            logger.info("使用自定义提示词")
+        elif prompt_id:
+            prompts = get_default_prompts()
+            prompt_obj = next((p for p in prompts if p['id'] == prompt_id), None)
+            if not prompt_obj:
+                raise HTTPException(status_code=404, detail="提示词不存在")
+            prompt_text = prompt_obj['content']
+            logger.info(f"使用提示词: {prompt_obj['name']}")
+        else:
+            # 默认提示词
+            prompt_text = "请对以下素材进行深度分析和提炼。"
+            logger.info("使用默认提示词")
+
+        # 4. 准备素材数据
+        materials_data = [
+            {
+                'id': mat.id,
+                'title': mat.title,
+                'content': mat.content,
+                'source_type': mat.source_type
+            }
+            for mat in materials
+        ]
+
+        # 5. 调用 AI 批量提炼
+        from ai_service import batch_refine_materials
+
+        try:
+            result = batch_refine_materials(
+                materials=materials_data,
+                prompt=prompt_text,
+                mode=mode,
+                model=model,
+                api_key=api_key
+            )
+
+            logger.info(f"批量提炼成功: mode={mode}, tokens={result['tokens_used']}")
+
+            # 6. 返回结果
+            return ApiResponse(
+                code=200,
+                message="批量提炼完成",
+                data={
+                    "refined_text": result['refined_text'],
+                    "materials_count": result['materials_count'],
+                    "mode": result['mode'],
+                    "model_used": result['model_used'],
+                    "tokens_used": result['tokens_used'],
+                    "cost_usd": result['cost_usd'],
+                    "material_ids": material_ids
+                }
+            )
+
+        except ValueError as e:
+            logger.error(f"参数错误: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"AI 调用失败: {error_msg}")
+
+            # 友好的错误提示
+            if "API Key" in error_msg or "api_key" in error_msg.lower():
+                raise HTTPException(status_code=401, detail="API Key 未配置或无效，请在设置中配置")
+            elif "timeout" in error_msg.lower():
+                raise HTTPException(status_code=504, detail="AI 服务超时，请稍后重试")
+            else:
+                raise HTTPException(status_code=500, detail=f"批量提炼失败: {error_msg}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"批量提炼失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
 # ========== 选题管理接口 ==========
 
 from pydantic import BaseModel
