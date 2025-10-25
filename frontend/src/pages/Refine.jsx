@@ -34,11 +34,15 @@ export default function Refine() {
   const loadPrompts = async () => {
     try {
       const response = await aiApi.getPrompts()
+      console.log('提示词响应:', response)
+      
       if (response.code === 200) {
-        setPrompts(response.data.prompts || response.data)
+        const promptsList = response.data.prompts || response.data || []
+        setPrompts(promptsList)
+        
         // 默认选中第一个
-        if (response.data.length > 0) {
-          setSelectedPromptId(response.data[0].id)
+        if (promptsList.length > 0) {
+          setSelectedPromptId(promptsList[0].id)
         }
       }
     } catch (error) {
@@ -67,33 +71,39 @@ export default function Refine() {
       return
     }
 
+    // 找到选中的提示词
+    const selectedPrompt = prompts.find(p => p.id === selectedPromptId)
+    if (!selectedPrompt) {
+      message.error('请选择提示词')
+      return
+    }
+
     setLoading(true)
     setShowResult(false)
     
     try {
       console.log('开始AI提炼:', {
         material_id: material.id,
-        prompt_id: selectedPromptId
+        prompt_name: selectedPrompt.name
       })
 
       // 调用AI提炼API
       const response = await aiApi.refine({
         material_id: material.id,
-        prompt_id: selectedPromptId,
-        model: 'gpt-3.5-turbo'  // 默认使用 GPT-3.5，更快更便宜
+        prompt_name: selectedPrompt.name  // 发送提示词名称
       })
 
       console.log('AI响应:', response)
 
       if (response.code === 200) {
-        const result = response.data.refined_text
+        const result = response.data.refined_content || response.data.refined_text
         setRefinedText(result)
         setEditedText(result)
         setRefineInfo({
-          prompt_name: response.data.prompt_name,
-          model_used: response.data.model_used,
-          tokens_used: response.data.tokens_used,
-          cost_usd: response.data.cost_usd
+          prompt_name: selectedPrompt.name,
+          model_used: response.data.model || 'mock-ai',
+          tokens_used: response.data.tokens?.total_tokens || 0,
+          cost_usd: response.data.cost || 0
         })
         setShowResult(true)
         message.success('AI 提炼完成！')
