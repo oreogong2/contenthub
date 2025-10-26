@@ -15,13 +15,14 @@ Base = declarative_base()
 class Material(Base):
     """素材表"""
     __tablename__ = 'materials'
-    
+
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(200), nullable=True, comment='素材标题')
     content = Column(Text, nullable=False, comment='素材内容')
     content_full = Column(Text, nullable=True, comment='完整内容')
     content_length = Column(Integer, nullable=True, comment='内容长度')
     source_type = Column(String(20), nullable=False, comment='来源类型')
+    source_url = Column(String(500), nullable=True, comment='来源URL')
     file_name = Column(String(200), nullable=True, comment='PDF文件名')
     tags = Column(Text, nullable=True, comment='标签（JSON格式）')
     is_deleted = Column(Integer, default=0, comment='是否已删除（0=未删除，1=已删除）')

@@ -135,34 +135,54 @@ class ContentHubExtractor {
 
     try {
       this.showLoading('正在发送到ContentHub...');
-      
+
+      const requestData = {
+        title: this.generateTitle(),
+        content: this.extractedData.combinedText || this.extractedData.originalText,
+        source_type: this.detectSourceType(),
+        source_url: this.extractedData.url
+      };
+
+      console.log('发送数据:', requestData);
+      console.log('发送到:', `${this.contenthubUrl}/api/materials/text`);
+
       const response = await fetch(`${this.contenthubUrl}/api/materials/text`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          title: this.generateTitle(),
-          content: this.extractedData.combinedText || this.extractedData.originalText,
-          source_type: this.detectSourceType(),
-          source_url: this.extractedData.url
-        })
+        body: JSON.stringify(requestData)
       });
 
+      console.log('响应状态:', response.status);
+
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        const errorText = await response.text();
+        console.error('响应错误:', errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
       const result = await response.json();
-      
+      console.log('响应结果:', result);
+
       if (result.code === 200) {
-        this.showSuccess('✅ 已成功发送到ContentHub！');
+        this.showSuccess(`✅ 已成功发送到ContentHub！\n素材ID: ${result.data.id}`);
       } else {
-        this.showError('发送失败: ' + result.message);
+        this.showError('发送失败: ' + (result.message || '未知错误'));
       }
     } catch (error) {
       console.error('发送失败:', error);
-      this.showError('发送失败，请检查ContentHub地址是否正确');
+
+      let errorMsg = '发送失败\n\n';
+      if (error.message.includes('Failed to fetch')) {
+        errorMsg += '❌ 无法连接到ContentHub\n请确认：\n1. ContentHub服务已启动\n2. 地址配置正确\n3. 当前地址：' + this.contenthubUrl;
+      } else if (error.message.includes('CORS')) {
+        errorMsg += '❌ 跨域访问被拒绝\n请确认ContentHub的CORS配置';
+      } else {
+        errorMsg += '错误详情：' + error.message;
+      }
+
+      this.showError(errorMsg);
     }
   }
 

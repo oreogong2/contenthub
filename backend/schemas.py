@@ -17,6 +17,7 @@ class MaterialCreate(BaseModel):
     title: Optional[str] = Field(None, max_length=200, description="素材标题")
     content: str = Field(..., min_length=1, description="素材内容")
     source_type: str = Field(..., description="来源类型")
+    source_url: Optional[str] = Field(None, description="来源URL")
     tags: Optional[List[str]] = Field(None, description="标签列表")
 
 class MaterialResponse(BaseModel):

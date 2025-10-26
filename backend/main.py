@@ -99,7 +99,8 @@ async def create_text_material(
         material_data = {
             "title": material.title,
             "content": material.content.strip(),
-            "source_type": material.source_type
+            "source_type": material.source_type,
+            "source_url": material.source_url if hasattr(material, 'source_url') else None
         }
         
         # 4. 保存到数据库
