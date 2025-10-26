@@ -1494,6 +1494,87 @@ async def permanent_delete_material(
         logger.error(f"永久删除素材失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
+# ========== OCR 识别接口 ==========
+
+from pydantic import BaseModel
+from typing import List
+
+class OCRRequest(BaseModel):
+    """OCR 请求模型"""
+    image_urls: List[str] = Field(..., description="图片URL列表")
+
+@app.post("/api/ocr/batch", response_model=ApiResponse)
+async def batch_ocr(
+    request: OCRRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    批量 OCR 识别图片
+
+    接收图片 URL 列表，下载并识别文字
+    """
+    logger.info(f"批量 OCR 识别: {len(request.image_urls)} 张图片")
+
+    try:
+        from image_service import download_image_from_url, extract_text_from_image
+
+        results = []
+
+        for index, image_url in enumerate(request.image_urls, 1):
+            result = {
+                "index": index,
+                "url": image_url,
+                "text": "",
+                "success": False,
+                "error": None
+            }
+
+            try:
+                # 下载图片
+                logger.info(f"[{index}/{len(request.image_urls)}] 下载图片: {image_url}")
+                image_path = download_image_from_url(image_url, timeout=10)
+
+                # OCR 识别
+                logger.info(f"[{index}/{len(request.image_urls)}] 开始 OCR 识别")
+                text = extract_text_from_image(image_path)
+
+                result["text"] = text
+                result["success"] = True
+
+                logger.info(f"[{index}/{len(request.image_urls)}] OCR 成功: {len(text)} 字")
+
+                # 删除临时文件
+                if os.path.exists(image_path):
+                    os.remove(image_path)
+
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"[{index}/{len(request.image_urls)}] OCR 失败: {error_msg}")
+                result["error"] = error_msg
+                result["text"] = "识别失败"
+
+            results.append(result)
+
+        # 统计成功率
+        success_count = sum(1 for r in results if r["success"])
+
+        logger.info(f"批量 OCR 完成: {success_count}/{len(request.image_urls)} 成功")
+
+        return ApiResponse(
+            code=200,
+            message=f"OCR 识别完成",
+            data={
+                "total": len(request.image_urls),
+                "success": success_count,
+                "failed": len(request.image_urls) - success_count,
+                "results": results
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"批量 OCR 失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="OCR 服务错误")
+
 if __name__ == "__main__":
     import uvicorn
     logger.info("启动 ContentHub API 服务器")

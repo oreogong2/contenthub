@@ -166,18 +166,58 @@ function extractImages() {
   return images;
 }
 
-// OCR识别（简化版）
+// OCR识别（调用后端API）
 async function performOCR(images) {
   try {
-    // 简化版OCR - 直接返回图片信息
+    console.log(`开始OCR识别 ${images.length} 张图片`);
+
+    // 获取 ContentHub URL 配置
+    const result = await chrome.storage.sync.get(['contenthubUrl']);
+    const contenthubUrl = result.contenthubUrl || 'http://localhost:8000';
+
+    // 提取图片 URL 列表
+    const imageUrls = images.map(img => img.url);
+
+    console.log('调用后端 OCR API:', `${contenthubUrl}/api/ocr/batch`);
+    console.log('图片 URL 列表:', imageUrls);
+
+    // 调用后端 OCR API
+    const response = await fetch(`${contenthubUrl}/api/ocr/batch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        image_urls: imageUrls
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`OCR API 请求失败: HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    console.log('OCR API 响应:', data);
+
+    if (data.code === 200 && data.data && data.data.results) {
+      const results = data.data.results;
+      console.log(`OCR 完成: ${data.data.success}/${data.data.total} 成功`);
+      return results;
+    } else {
+      throw new Error('OCR API 返回格式错误');
+    }
+
+  } catch (error) {
+    console.error('OCR处理失败:', error);
+
+    // 如果 API 调用失败，返回占位符
     return images.map((img, index) => ({
       index: index + 1,
       url: img.url,
-      text: `图片${index + 1}中的文字内容（需要OCR处理）`,
-      success: false
+      text: `OCR 失败: ${error.message}`,
+      success: false,
+      error: error.message
     }));
-  } catch (error) {
-    console.error('OCR处理失败:', error);
-    return [];
   }
 }
