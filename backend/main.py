@@ -20,7 +20,12 @@ logging.basicConfig(
     ]
 )
 
+# 启用日志脱敏过滤器（防止敏感信息泄露）
+from log_filter import setup_logging_with_filter
+setup_logging_with_filter()
+
 logger = logging.getLogger(__name__)
+logger.info("🔒 日志脱敏过滤器已启用")
 
 # 创建 FastAPI 应用
 app = FastAPI(

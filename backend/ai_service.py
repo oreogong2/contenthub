@@ -152,14 +152,40 @@ def _call_openai(content: str, prompt: str, model: str, api_key: str = None):
             }
             
         except Exception as e:
-            logger.warning(f"OpenAI 调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-            
-            if attempt == max_retries - 1:
-                # 最后一次尝试失败
-                logger.error(f"OpenAI 调用最终失败: {e}")
-                raise Exception(f"AI 调用失败: {str(e)}")
-            
-            # 指数退避
+            # 细化异常处理
+            error_msg = str(e)
+            should_retry = True
+
+            # 根据错误类型判断是否应该重试
+            if "authentication" in error_msg.lower() or "invalid api key" in error_msg.lower():
+                logger.error(f"OpenAI API 密钥认证失败: {e}")
+                raise Exception("OpenAI API 密钥无效或已过期，请检查配置")
+
+            elif "rate_limit" in error_msg.lower() or "quota" in error_msg.lower():
+                logger.warning(f"OpenAI API 请求频率限制或配额不足: {e}")
+                # 速率限制可以重试
+                if attempt == max_retries - 1:
+                    raise Exception("OpenAI API 请求过于频繁或配额已用完，请稍后重试")
+
+            elif "timeout" in error_msg.lower():
+                logger.warning(f"OpenAI API 请求超时: {e}")
+                if attempt == max_retries - 1:
+                    raise Exception("OpenAI API 请求超时，请检查网络连接")
+
+            elif "model" in error_msg.lower() and "not found" in error_msg.lower():
+                logger.error(f"OpenAI 模型不存在: {e}")
+                raise Exception(f"指定的 AI 模型 '{model}' 不存在或无权访问")
+
+            elif "content_filter" in error_msg.lower() or "policy" in error_msg.lower():
+                logger.error(f"OpenAI 内容策略违规: {e}")
+                raise Exception("内容不符合 OpenAI 使用策略，请修改后重试")
+
+            else:
+                logger.warning(f"OpenAI 调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt == max_retries - 1:
+                    raise Exception(f"OpenAI API 调用失败: {error_msg}")
+
+            # 指数退避重试
             sleep_time = 2 ** attempt
             logger.info(f"等待 {sleep_time} 秒后重试...")
             time.sleep(sleep_time)
@@ -277,12 +303,41 @@ def _call_deepseek(content: str, prompt: str, model: str, api_key: str = None):
             }
             
         except Exception as e:
-            logger.warning(f"DeepSeek 调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-            
-            if attempt == max_retries - 1:
-                # 最后一次尝试失败
-                logger.error(f"DeepSeek 调用最终失败: {e}")
-                raise Exception(f"AI 调用失败: {str(e)}")
+            # 细化异常处理
+            error_msg = str(e)
+
+            # 根据错误类型判断是否应该重试
+            if "authentication" in error_msg.lower() or "invalid api key" in error_msg.lower() or "401" in error_msg:
+                logger.error(f"DeepSeek API 密钥认证失败: {e}")
+                raise Exception("DeepSeek API 密钥无效或已过期，请检查配置")
+
+            elif "rate_limit" in error_msg.lower() or "429" in error_msg or "quota" in error_msg.lower():
+                logger.warning(f"DeepSeek API 请求频率限制或配额不足: {e}")
+                if attempt == max_retries - 1:
+                    raise Exception("DeepSeek API 请求过于频繁或配额已用完，请稍后重试")
+
+            elif "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                logger.warning(f"DeepSeek API 请求超时: {e}")
+                if attempt == max_retries - 1:
+                    raise Exception("DeepSeek API 请求超时，请检查网络连接或稍后重试")
+
+            elif ("model" in error_msg.lower() and "not found" in error_msg.lower()) or "404" in error_msg:
+                logger.error(f"DeepSeek 模型不存在: {e}")
+                raise Exception(f"指定的 AI 模型 '{model}' 不存在或无权访问")
+
+            elif "content_filter" in error_msg.lower() or "policy" in error_msg.lower():
+                logger.error(f"DeepSeek 内容策略违规: {e}")
+                raise Exception("内容不符合 DeepSeek 使用策略，请修改后重试")
+
+            elif "connection" in error_msg.lower() or "network" in error_msg.lower():
+                logger.warning(f"DeepSeek API 网络连接错误: {e}")
+                if attempt == max_retries - 1:
+                    raise Exception("无法连接到 DeepSeek API 服务器，请检查网络")
+
+            else:
+                logger.warning(f"DeepSeek 调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt == max_retries - 1:
+                    raise Exception(f"DeepSeek API 调用失败: {error_msg}")
             
             # 指数退避
             sleep_time = 2 ** attempt

@@ -3,10 +3,10 @@
 作用: 定义 SQLAlchemy 数据库模型
 作者: ContentHub Team
 日期: 2025-10-25
-最后更新: 2025-10-25
+最后更新: 2025-10-26
 """
 
-from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy import Column, Integer, String, Text, DateTime, Index
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 
@@ -21,28 +21,40 @@ class Material(Base):
     content = Column(Text, nullable=False, comment='素材内容')
     content_full = Column(Text, nullable=True, comment='完整内容')
     content_length = Column(Integer, nullable=True, comment='内容长度')
-    source_type = Column(String(20), nullable=False, comment='来源类型')
+    source_type = Column(String(20), nullable=False, index=True, comment='来源类型')
     source_url = Column(String(500), nullable=True, comment='来源URL')
     file_name = Column(String(200), nullable=True, comment='PDF文件名')
     tags = Column(Text, nullable=True, comment='标签（JSON格式）')
-    is_deleted = Column(Integer, default=0, comment='是否已删除（0=未删除，1=已删除）')
+    is_deleted = Column(Integer, default=0, index=True, comment='是否已删除（0=未删除，1=已删除）')
     deleted_at = Column(DateTime, nullable=True, comment='删除时间')
-    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    created_at = Column(DateTime, default=datetime.now, index=True, comment='创建时间')
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+    # 复合索引优化常见查询
+    __table_args__ = (
+        Index('idx_material_source_deleted', 'source_type', 'is_deleted'),
+        Index('idx_material_created_deleted', 'created_at', 'is_deleted'),
+    )
 
 class Topic(Base):
     """选题表"""
     __tablename__ = 'topics'
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    material_id = Column(Integer, nullable=False, comment='关联的素材ID')
+    material_id = Column(Integer, nullable=False, index=True, comment='关联的素材ID')
     title = Column(String(200), nullable=False, comment='选题标题')
     refined_content = Column(Text, nullable=False, comment='提炼后的内容')
     prompt_name = Column(String(100), nullable=True, comment='使用的提示词名称')
     tags = Column(Text, nullable=False, comment='标签（JSON格式）')
-    source_type = Column(String(20), nullable=True, comment='来源类型')
-    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    source_type = Column(String(20), nullable=True, index=True, comment='来源类型')
+    created_at = Column(DateTime, default=datetime.now, index=True, comment='创建时间')
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+    # 复合索引优化常见查询
+    __table_args__ = (
+        Index('idx_topic_material_id', 'material_id'),
+        Index('idx_topic_created', 'created_at'),
+    )
 
 class Tag(Base):
     """标签表"""
