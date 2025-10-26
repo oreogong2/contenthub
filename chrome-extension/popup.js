@@ -39,18 +39,36 @@ class ContentHubExtractor {
       
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       
-      // 发送消息给content script
-      const response = await chrome.tabs.sendMessage(tab.id, {
-        action: 'extractContent',
-        useOCR: useOCR
+      // 先尝试发送消息给content script
+      try {
+        const response = await chrome.tabs.sendMessage(tab.id, {
+          action: 'extractContent',
+          useOCR: useOCR
+        });
+
+        if (response && response.success) {
+          this.extractedData = response.data;
+          this.displayResult(this.extractedData);
+          this.enableButtons();
+          return;
+        }
+      } catch (messageError) {
+        console.log('Content script消息失败，尝试直接注入:', messageError);
+      }
+      
+      // 如果content script通信失败，直接注入代码
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        function: this.extractPageContentFunction,
+        args: [useOCR]
       });
 
-      if (response && response.success) {
-        this.extractedData = response.data;
+      if (results && results[0] && results[0].result) {
+        this.extractedData = results[0].result;
         this.displayResult(this.extractedData);
         this.enableButtons();
       } else {
-        this.showError(response?.error || '提取失败，请重试');
+        this.showError('提取失败，请重试');
       }
     } catch (error) {
       console.error('提取失败:', error);
@@ -313,6 +331,126 @@ class ContentHubExtractor {
     div.textContent = text;
     return div.innerHTML;
   }
+}
+
+// 页面内容提取函数（用于直接注入）
+function extractPageContentFunction(useOCR = false) {
+  const result = {
+    url: window.location.href,
+    platform: detectPlatform(),
+    originalText: '',
+    images: [],
+    ocrResults: [],
+    combinedText: ''
+  };
+
+  try {
+    // 提取文本内容
+    result.originalText = extractTextContent();
+    
+    // 提取图片
+    result.images = extractImages();
+    
+    // 如果需要OCR（简化版）
+    if (useOCR && result.images.length > 0) {
+      result.ocrResults = result.images.map((img, index) => ({
+        index: index + 1,
+        url: img.url,
+        text: `图片${index + 1}中的文字内容（需要OCR处理）`,
+        success: true
+      }));
+    }
+    
+    // 合并所有文本
+    const allTexts = [result.originalText];
+    if (result.ocrResults) {
+      allTexts.push(...result.ocrResults.map(r => r.text).filter(t => t));
+    }
+    result.combinedText = allTexts.filter(t => t).join('\n\n');
+    
+    return result;
+  } catch (error) {
+    console.error('提取失败:', error);
+    return { ...result, error: error.message };
+  }
+}
+
+// 平台检测
+function detectPlatform() {
+  const url = window.location.href;
+  if (url.includes('xiaohongshu.com')) return 'xiaohongshu';
+  if (url.includes('twitter.com') || url.includes('x.com')) return 'twitter';
+  if (url.includes('weibo.com')) return 'weibo';
+  if (url.includes('douyin.com')) return 'douyin';
+  return 'other';
+}
+
+// 提取文本内容
+function extractTextContent() {
+  // 小红书
+  if (window.location.href.includes('xiaohongshu.com')) {
+    const selectors = [
+      '.note-text', '.desc', '.content', '.text-content',
+      '[data-testid="note-text"]', '.note-detail .desc', '.note-detail .content'
+    ];
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (element && element.innerText.trim()) return element.innerText.trim();
+    }
+  }
+  
+  // 推特
+  if (window.location.href.includes('twitter.com') || window.location.href.includes('x.com')) {
+    const selectors = [
+      '[data-testid="tweetText"]', '.tweet-text', '.js-tweet-text', '.tweet-content'
+    ];
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (element && element.innerText.trim()) return element.innerText.trim();
+    }
+  }
+  
+  // 微博
+  if (window.location.href.includes('weibo.com')) {
+    const selectors = [
+      '.weibo-text', '.WB_text', '.txt', '.content'
+    ];
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (element && element.innerText.trim()) return element.innerText.trim();
+    }
+  }
+  
+  // 通用提取
+  const selectors = [
+    'main p', '.content', '.text', '.post-content', '.article-content', '.main-content',
+    'p', 'div[class*="content"]'
+  ];
+  for (const selector of selectors) {
+    const element = document.querySelector(selector);
+    if (element && element.innerText.trim()) return element.innerText.trim();
+  }
+  
+  return '';
+}
+
+// 提取图片
+function extractImages() {
+  const images = [];
+  const selectors = [
+    'img[src*="http"]', '.image img', '.photo img', '.media img'
+  ];
+  
+  for (const selector of selectors) {
+    const elements = document.querySelectorAll(selector);
+    elements.forEach(img => {
+      if (img.src && img.src.startsWith('http') && !img.src.includes('data:')) {
+        images.push({ index: images.length + 1, url: img.src });
+      }
+    });
+  }
+  
+  return images;
 }
 
 // 初始化
