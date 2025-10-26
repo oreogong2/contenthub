@@ -12,6 +12,8 @@ import Topics from './pages/Topics'
 import TopicDetail from './pages/TopicDetail'
 import TopicEdit from './pages/TopicEdit'
 import Settings from './pages/Settings'
+import TopicInspiration from './pages/TopicInspiration'
+import RecycleBin from './pages/RecycleBin'
 import './App.css'
 
 const { Header, Content } = Layout
@@ -67,13 +69,11 @@ function Navigation() {
           border: 'none',
           justifyContent: 'flex-end'
         }}
-      >
-        {menuItems.map(item => (
-          <Menu.Item key={item.key}>
-            <Link to={item.path}>{item.label}</Link>
-          </Menu.Item>
-        ))}
-      </Menu>
+        items={menuItems.map(item => ({
+          key: item.key,
+          label: <Link to={item.path}>{item.label}</Link>
+        }))}
+      />
     </Header>
   )
 }
@@ -142,6 +142,8 @@ function App() {
           <Route path="/topics/:id" element={<TopicDetail />} />
           <Route path="/topics/:id/edit" element={<TopicEdit />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/topic-inspiration" element={<TopicInspiration />} />
+          <Route path="/recycle-bin" element={<RecycleBin />} />
               </Routes>
             </div>
           </Content>

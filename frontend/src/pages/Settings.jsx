@@ -4,11 +4,12 @@
  */
 
 import { useState, useEffect } from 'react'
-import { Card, Select, Input, Button, Space, Tag, message, Divider, Alert, List, Modal, Table, Statistic, Row, Col } from 'antd'
+import { Card, Select, Input, Button, Space, Tag, message, Divider, Alert, List, Modal, Table, Statistic, Row, Col, Typography } from 'antd'
 import { SaveOutlined, PlusOutlined, EyeInvisibleOutlined, EyeOutlined, EditOutlined, DeleteOutlined, BarChartOutlined, DollarOutlined } from '@ant-design/icons'
-import axios from 'axios'
+import { aiApi, configApi, topicInspirationApi, usageStatsApi } from '../api'
 
 const { TextArea } = Input
+const { Text } = Typography
 
 export default function Settings() {
   const [loading, setLoading] = useState(true)
@@ -36,6 +37,10 @@ export default function Settings() {
     description: ''
   })
   
+  // 选题提示词编辑
+  const [topicPromptModalVisible, setTopicPromptModalVisible] = useState(false)
+  const [topicPrompt, setTopicPrompt] = useState('')
+  
   // 使用统计
   const [usageStats, setUsageStats] = useState({
     totalRequests: 0,
@@ -55,12 +60,12 @@ export default function Settings() {
     setLoading(true)
     
     try {
-      const response = await axios.get('/api/configs')
+      const response = await configApi.getConfigs()
       
-      console.log('配置加载成功:', response.data)
+      console.log('配置加载成功:', response)
       
-      if (response.data.code === 200) {
-        const data = response.data.data
+      if (response.code === 200) {
+        const data = response.data
         
         setAiModel(data.default_ai_model || 'gpt-4')
         setOpenaiKey(data.openai_api_key || '')
@@ -81,6 +86,7 @@ export default function Settings() {
         // 解析提示词
         try {
           const promptsList = JSON.parse(data.default_prompts || '[]')
+          console.log('加载的提示词列表:', promptsList)
           setPrompts(promptsList)
         } catch (e) {
           // 使用默认提示词
@@ -133,14 +139,14 @@ export default function Settings() {
       
       console.log('保存配置:', configs)
       
-      const response = await axios.put('/api/configs', configs)
+      const response = await configApi.updateConfigs(configs)
       
-      console.log('API响应:', response.data)
+      console.log('API响应:', response)
       
-      if (response.data.code === 200) {
+      if (response.code === 200) {
         message.success('配置已保存')
       } else {
-        message.error(response.data.message || '保存失败')
+        message.error(response.message || '保存失败')
       }
     } catch (error) {
       console.error('保存配置失败:', error)
@@ -196,7 +202,7 @@ export default function Settings() {
   }
 
   // 保存提示词
-  const handleSavePrompt = () => {
+  const handleSavePrompt = async () => {
     if (!promptForm.name.trim()) {
       message.warning('请输入提示词名称')
       return
@@ -206,53 +212,116 @@ export default function Settings() {
       return
     }
 
-    if (editingPrompt) {
-      // 编辑现有提示词
-      setPrompts(prompts.map(p => 
-        p.id === editingPrompt.id 
-          ? { ...p, ...promptForm }
-          : p
-      ))
-      message.success('提示词已更新')
-    } else {
-      // 添加新提示词
-      const newId = prompts.length > 0 ? Math.max(...prompts.map(p => p.id)) + 1 : 1
-      setPrompts([...prompts, {
-        id: newId,
-        ...promptForm,
-        is_default: false
-      }])
-      message.success('提示词已添加')
-    }
+    try {
+      let updatedPrompts
+      
+      if (editingPrompt) {
+        // 编辑现有提示词
+        updatedPrompts = prompts.map(p => 
+          p.id === editingPrompt.id 
+            ? { ...p, ...promptForm }
+            : p
+        )
+      } else {
+        // 添加新提示词
+        const newId = prompts.length > 0 ? Math.max(...prompts.map(p => p.id)) + 1 : 1
+        updatedPrompts = [...prompts, {
+          id: newId,
+          ...promptForm,
+          is_default: false
+        }]
+      }
 
-    setPromptModalVisible(false)
+      // 调用后端API保存
+      const response = await aiApi.updatePrompts(updatedPrompts)
+      if (response.code === 200) {
+        setPrompts(updatedPrompts)
+        message.success(editingPrompt ? '提示词已更新' : '提示词已添加')
+        setPromptModalVisible(false)
+      } else {
+        message.error(response.message || '保存失败')
+      }
+    } catch (error) {
+      console.error('保存提示词失败:', error)
+      message.error('保存失败，请重试')
+    }
   }
 
   // 删除提示词
-  const handleDeletePrompt = (promptId) => {
-    Modal.confirm({
-      title: '确认删除',
-      content: '确定要删除这个提示词吗？',
-      okText: '删除',
-      cancelText: '取消',
-      okButtonProps: { danger: true },
-      onOk() {
-        setPrompts(prompts.filter(p => p.id !== promptId))
+  const handleDeletePrompt = async (promptId) => {
+    console.log('handleDeletePrompt 被调用:', promptId)
+    
+    // 直接删除，不使用Modal.confirm（因为React 19兼容性问题）
+    try {
+      console.log('开始删除提示词:', promptId)
+      const response = await aiApi.deletePrompt(promptId)
+      console.log('删除API响应:', response)
+      
+      if (response.code === 200) {
+        const updatedPrompts = prompts.filter(p => p.id !== promptId)
+        setPrompts(updatedPrompts)
+        
+        // 同时更新配置中的提示词
+        try {
+          await configApi.updateConfigs({
+            default_prompts: JSON.stringify(updatedPrompts)
+          })
+        } catch (error) {
+          console.warning('更新配置中的提示词失败:', error)
+        }
+        
         message.success('提示词已删除')
+      } else {
+        message.error(response.message || '删除失败')
       }
-    })
+    } catch (error) {
+      console.error('删除提示词失败:', error)
+      message.error('删除失败，请重试')
+    }
+  }
+
+  // 打开选题提示词编辑模态框
+  const openTopicPromptModal = async () => {
+    try {
+      const response = await topicInspirationApi.getTopicPrompt()
+      if (response.code === 200) {
+        setTopicPrompt(response.data.prompt || '')
+      }
+    } catch (error) {
+      console.error('获取选题提示词失败:', error)
+      setTopicPrompt('')
+    }
+    setTopicPromptModalVisible(true)
+  }
+
+  // 保存选题提示词
+  const handleSaveTopicPrompt = async () => {
+    if (!topicPrompt.trim()) {
+      message.warning('请输入选题提示词')
+      return
+    }
+
+    try {
+      const response = await topicInspirationApi.setTopicPrompt(topicPrompt)
+      if (response.code === 200) {
+        message.success('选题提示词保存成功')
+        setTopicPromptModalVisible(false)
+      } else {
+        message.error(response.message || '保存失败')
+      }
+    } catch (error) {
+      console.error('保存选题提示词失败:', error)
+      message.error('保存失败，请重试')
+    }
   }
 
   // 加载使用统计
-  const loadUsageStats = () => {
+  const loadUsageStats = async () => {
     try {
-      const saved = localStorage.getItem('contenthub_usage')
-      if (saved) {
-        const stats = JSON.parse(saved)
-        
-        // 计算总费用
-        const totalCost = Object.values(stats.byModel || {})
-          .reduce((sum, model) => sum + (model.cost || 0), 0)
+      const response = await usageStatsApi.getStats(30)
+      
+      if (response.code === 200) {
+        const data = response.data
         
         // 格式化费用
         const formatCost = (cost) => {
@@ -263,27 +332,31 @@ export default function Settings() {
         }
         
         setUsageStats({
-          totalRequests: stats.totalRequests || 0,
-          totalTokens: stats.totalTokens || 0,
-          totalCost: formatCost(totalCost),
-          byModel: Object.entries(stats.byModel || {}).map(([model, data]) => ({
+          totalRequests: data.total_requests || 0,
+          totalTokens: data.total_tokens || 0,
+          totalCost: formatCost(data.total_cost || 0),
+          byModel: Object.entries(data.by_model || {}).map(([model, modelData]) => ({
             model,
-            requests: data.requests || 0,
-            tokens: data.tokens || 0,
-            cost: formatCost(data.cost || 0),
-            percentage: stats.totalRequests > 0 ? 
-              ((data.requests / stats.totalRequests) * 100).toFixed(1) : 0
+            requests: modelData.requests || 0,
+            tokens: modelData.tokens || 0,
+            cost: formatCost(modelData.cost || 0),
+            percentage: data.total_requests > 0 ? 
+              ((modelData.requests / data.total_requests) * 100).toFixed(1) : 0
           })),
-          recentDays: Object.entries(stats.dailyUsage || {})
+          recentDays: Object.entries(data.daily_usage || {})
             .sort(([a], [b]) => b.localeCompare(a))
             .slice(0, 7)
-            .map(([date, data]) => ({
+            .map(([date, dayData]) => ({
               date,
-              requests: data.requests || 0,
-              tokens: data.tokens || 0,
-              cost: formatCost(data.cost || 0)
+              requests: dayData.requests || 0,
+              tokens: dayData.tokens || 0,
+              cost: formatCost(dayData.cost || 0)
             }))
         })
+        
+        console.log('使用统计加载成功:', data)
+      } else {
+        console.error('获取使用统计失败:', response.message)
       }
     } catch (error) {
       console.error('加载使用统计失败:', error)
@@ -450,6 +523,55 @@ export default function Settings() {
           </Space>
         </Card>
 
+        {/* 功能提示词配置 */}
+        <Card
+          title={<span style={{ fontSize: 18, fontWeight: 600 }}>⚙️ 功能提示词配置</span>}
+          style={{ marginBottom: 24 }}
+        >
+          <Row gutter={[16, 16]}>
+            <Col span={12}>
+              <Card
+                title="🎯 选题灵感分析"
+                size="small"
+                style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)' }}
+              >
+                <div style={{ marginBottom: 12 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    用于分析素材库内容，发现短视频选题方向
+                  </Text>
+                </div>
+                <Button 
+                  type="primary" 
+                  size="small"
+                  onClick={() => openTopicPromptModal()}
+                >
+                  配置提示词
+                </Button>
+              </Card>
+            </Col>
+            <Col span={12}>
+              <Card
+                title="⚡ AI 内容提炼"
+                size="small"
+                style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)' }}
+              >
+                <div style={{ marginBottom: 12 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    用于提炼素材内容，生成结构化输出
+                  </Text>
+                </div>
+                <Button 
+                  type="primary" 
+                  size="small"
+                  onClick={() => openPromptModal()}
+                >
+                  管理提示词
+                </Button>
+              </Card>
+            </Col>
+          </Row>
+        </Card>
+
         {/* 提示词管理 */}
         <Card
           title={<span style={{ fontSize: 18, fontWeight: 600 }}>💬 提示词管理</span>}
@@ -486,17 +608,27 @@ export default function Settings() {
                     >
                       编辑
                     </Button>,
-                    !prompt.is_default && (
-                      <Button
-                        key="delete"
-                        type="link"
-                        danger
-                        icon={<DeleteOutlined />}
-                        onClick={() => handleDeletePrompt(prompt.id)}
-                      >
-                        删除
-                      </Button>
-                    )
+                    <Button
+                      key="delete"
+                      type="link"
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={(e) => {
+                        console.log('删除按钮被点击:', prompt.id, prompt.name, 'is_default:', prompt.is_default)
+                        e.stopPropagation()
+                        if (prompt.is_default) {
+                          message.warning('默认提示词不能删除')
+                          return
+                        }
+                        handleDeletePrompt(prompt.id)
+                      }}
+                      style={{
+                        zIndex: 10,
+                        position: 'relative'
+                      }}
+                    >
+                      删除
+                    </Button>
                   ].filter(Boolean)}
                   style={{
                     background: 'rgba(255, 255, 255, 0.03)',
@@ -765,6 +897,45 @@ export default function Settings() {
           <Alert
             message="提示：清晰的提示词能帮助AI更好地理解你的需求，生成更符合预期的内容"
             type="info"
+            showIcon
+          />
+        </Space>
+      </Modal>
+
+      {/* 选题提示词编辑对话框 */}
+      <Modal
+        title="配置选题灵感提示词"
+        open={topicPromptModalVisible}
+        onOk={handleSaveTopicPrompt}
+        onCancel={() => setTopicPromptModalVisible(false)}
+        width={800}
+        okText="保存"
+        cancelText="取消"
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Alert
+            message="选题灵感提示词用于分析您的素材库内容，发现潜在的短视频选题方向"
+            type="info"
+            showIcon
+          />
+          
+          <div>
+            <div style={{ marginBottom: 8, fontWeight: 600 }}>
+              提示词内容
+            </div>
+            <TextArea
+              rows={12}
+              placeholder="请输入选题分析的提示词..."
+              value={topicPrompt}
+              onChange={(e) => setTopicPrompt(e.target.value)}
+              maxLength={5000}
+              showCount
+            />
+          </div>
+
+          <Alert
+            message="提示：好的选题提示词应该明确分析要求、输出格式，并强调基于素材内容进行分析"
+            type="warning"
             showIcon
           />
         </Space>

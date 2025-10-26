@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react'
 import { Card, Input, Tag, Space, Button, Spin, Empty, message, Pagination } from 'antd'
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons'
+import { useNavigate } from 'react-router-dom'
 import { topicApi } from '../api'
 
 const { Search } = Input
@@ -21,6 +22,7 @@ const PRESET_TAGS = [
 ]
 
 export default function Topics() {
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [topics, setTopics] = useState([])
   const [total, setTotal] = useState(0)
@@ -215,7 +217,7 @@ export default function Topics() {
                 backdropFilter: 'blur(10px)',
                 cursor: 'pointer'
               }}
-              bodyStyle={{ padding: 24 }}
+              styles={{ body: { padding: 24 } }}
               onClick={() => navigate(`/topics/${topic.id}`)}
             >
               <div>

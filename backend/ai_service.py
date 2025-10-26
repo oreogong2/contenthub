@@ -75,7 +75,20 @@ def _call_openai(content: str, prompt: str, model: str, api_key: str = None):
     
     # 获取 API Key
     if not api_key:
+        # 优先从环境变量获取
         api_key = os.getenv("OPENAI_API_KEY")
+        
+        # 如果环境变量没有，尝试从数据库配置获取
+        if not api_key:
+            try:
+                from database import get_db
+                from crud import get_config
+                db = next(get_db())
+                config = get_config(db, "openai_api_key")
+                if config and config.value:
+                    api_key = config.value
+            except Exception as e:
+                logger.warning(f"从数据库获取OpenAI API Key失败: {e}")
     
     if not api_key:
         logger.error("未配置 OpenAI API Key")
@@ -188,7 +201,20 @@ def _call_deepseek(content: str, prompt: str, model: str, api_key: str = None):
     
     # 获取 API Key
     if not api_key:
+        # 优先从环境变量获取
         api_key = os.getenv("DEEPSEEK_API_KEY")
+        
+        # 如果环境变量没有，尝试从数据库配置获取
+        if not api_key:
+            try:
+                from database import get_db
+                from crud import get_config
+                db = next(get_db())
+                config = get_config(db, "deepseek_api_key")
+                if config and config.value:
+                    api_key = config.value
+            except Exception as e:
+                logger.warning(f"从数据库获取DeepSeek API Key失败: {e}")
     
     if not api_key:
         logger.error("未配置 DeepSeek API Key")
@@ -196,24 +222,25 @@ def _call_deepseek(content: str, prompt: str, model: str, api_key: str = None):
     
     logger.info(f"使用 DeepSeek API: model={model}")
     
-    # 创建客户端，指向 DeepSeek API
+    # 创建客户端，指向 SiliconFlow 代理的 DeepSeek API
     client = OpenAI(
         api_key=api_key,
-        base_url="https://api.deepseek.com"
+        base_url="https://api.siliconflow.cn/v1"
     )
     
     # 组合完整的提示
     full_prompt = f"{prompt}\n\n以下是需要提炼的内容：\n\n{content}"
     
     # 重试机制
-    max_retries = 3
+    max_retries = 5  # 增加重试次数
     for attempt in range(max_retries):
         try:
             logger.info(f"调用 DeepSeek API (尝试 {attempt + 1}/{max_retries})")
             
-            # 调用 API
+            # 调用 API (使用SiliconFlow的模型名称)
+            model_name = "deepseek-ai/DeepSeek-V3" if model == "deepseek-chat" else model
             response = client.chat.completions.create(
-                model=model,
+                model=model_name,
                 messages=[
                     {
                         "role": "system",
@@ -225,8 +252,8 @@ def _call_deepseek(content: str, prompt: str, model: str, api_key: str = None):
                     }
                 ],
                 temperature=0.7,
-                max_tokens=2000,
-                timeout=30.0  # 30秒超时
+                max_tokens=4000,  # 增加输出长度限制
+                timeout=120.0  # 增加到120秒超时
             )
             
             # 提取结果
@@ -290,4 +317,99 @@ def get_default_prompts():
             "is_default": False
         }
     ]
+
+async def discover_topic_ideas(content: str, custom_prompt: str = None) -> list:
+    """
+    发现选题灵感 - 分析素材内容并推荐选题
+    """
+    logger.info("开始分析素材内容，发现选题灵感")
+    
+    try:
+        # 构建选题发现的提示词
+        if custom_prompt:
+            prompt = custom_prompt
+            logger.info("使用自定义选题提示词")
+        else:
+            prompt = """你是一个专业的短视频内容策划师，擅长从长文本中提取有价值的短视频选题。
+
+请仔细分析以下素材内容，发现3-5个最有价值的短视频选题方向。
+
+分析要求：
+1. 选题必须基于素材中的具体内容，不能凭空创造
+2. 每个选题都要有明确的实用价值或启发意义
+3. 选题要适合制作1-3分钟的短视频
+4. 目标受众要具体明确，不能过于宽泛
+5. 传播潜力要基于内容的独特性和实用性
+
+请严格按照以下JSON格式返回结果，不要添加任何其他文字：
+[
+  {
+    "title": "具体而吸引人的选题标题",
+    "core_idea": "基于素材内容的核心观点，50-100字",
+    "target_audience": "具体的目标受众群体",
+    "potential": "高/中/低 - 传播潜力评估"
+  }
+]"""
+            logger.info("使用默认选题提示词")
+
+        # 获取默认AI模型
+        try:
+            from database import get_db
+            from crud import get_config
+            db = next(get_db())
+            default_model = get_config(db, "default_ai_model")
+            model = default_model.value if default_model and default_model.value else "deepseek-chat"
+        except Exception as e:
+            logger.warning(f"获取默认AI模型失败: {e}")
+            model = "deepseek-chat"
+        
+        # 调用AI分析
+        result = refine_content(content, prompt, model)
+        
+        if result and 'refined_text' in result:
+            # 尝试解析JSON结果
+            import json
+            import re
+            
+            raw_text = result['refined_text']
+            logger.info(f"AI原始返回: {raw_text[:200]}...")
+            
+            # 尝试提取JSON内容（处理Markdown代码块）
+            json_text = raw_text
+            
+            # 如果被```json```包裹，提取其中的内容
+            if '```json' in raw_text:
+                match = re.search(r'```json\s*(.*?)\s*```', raw_text, re.DOTALL)
+                if match:
+                    json_text = match.group(1).strip()
+                    logger.info("从Markdown代码块中提取JSON")
+            elif '```' in raw_text:
+                # 处理普通的```代码块
+                match = re.search(r'```\s*(.*?)\s*```', raw_text, re.DOTALL)
+                if match:
+                    json_text = match.group(1).strip()
+                    logger.info("从代码块中提取内容")
+            
+            try:
+                topic_ideas = json.loads(json_text)
+                logger.info(f"成功发现 {len(topic_ideas)} 个选题灵感")
+                return topic_ideas
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON解析失败: {e}")
+                logger.warning(f"尝试解析的内容: {json_text[:200]}...")
+                
+                # 如果JSON解析失败，返回文本格式
+                return [{
+                    "title": "AI分析结果",
+                    "core_idea": raw_text,
+                    "target_audience": "通用受众",
+                    "potential": "待评估"
+                }]
+        else:
+            logger.error("AI分析失败，返回空结果")
+            return []
+            
+    except Exception as e:
+        logger.error(f"发现选题灵感失败: {e}", exc_info=True)
+        return []
 

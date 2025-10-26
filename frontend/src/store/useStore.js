@@ -9,6 +9,10 @@ const useStore = create((set) => ({
   currentMaterial: null,
   setCurrentMaterial: (material) => set({ currentMaterial: material }),
   
+  // 批量素材
+  batchMaterials: [],
+  setBatchMaterials: (materials) => set({ batchMaterials: materials }),
+  
   // 提炼结果
   refinedContent: null,
   setRefinedContent: (content) => set({ refinedContent: content }),
@@ -20,9 +24,11 @@ const useStore = create((set) => ({
   // 清空状态
   clearAll: () => set({
     currentMaterial: null,
+    batchMaterials: [],
     refinedContent: null
   })
 }))
 
 export default useStore
+
 

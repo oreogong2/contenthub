@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { 
+      width: 450px; 
+      padding: 20px; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    
+    .header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    
+    .header p {
+      margin: 5px 0 0 0;
+      font-size: 12px;
+      opacity: 0.8;
+    }
+    
+    .config-section {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 15px;
+      backdrop-filter: blur(10px);
+    }
+    
+    .config-section h3 {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    
+    input[type="text"], input[type="url"] {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      font-size: 12px;
+      box-sizing: border-box;
+    }
+    
+    input::placeholder {
+      color: rgba(255, 255, 255, 0.6);
+    }
+    
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    
+    button {
+      flex: 1;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+    
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+    
+    .btn-ocr {
+      background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+      color: white;
+    }
+    
+    .btn-ocr:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    }
+    
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+    
+    #result {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 15px;
+      backdrop-filter: blur(10px);
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    
+    .section {
+      margin-bottom: 15px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .section:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+    }
+    
+    .section h4 {
+      margin: 0 0 8px 0;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .section p {
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.4;
+      opacity: 0.9;
+    }
+    
+    .image-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    
+    .image-item {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 11px;
+      text-align: center;
+      min-width: 60px;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 20px;
+    }
+    
+    .spinner {
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top: 2px solid white;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 10px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .status {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-left: 8px;
+    }
+    
+    .status.success {
+      background: rgba(16, 185, 129, 0.3);
+      color: #6ee7b7;
+    }
+    
+    .status.error {
+      background: rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+    
+    .status.processing {
+      background: rgba(59, 130, 246, 0.3);
+      color: #60a5fa;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🎬 ContentHub 素材提取器</h1>
+    <p>一键提取内容到您的素材库</p>
+  </div>
+  
+          <div class="config-section">
+            <h3>⚙️ ContentHub 配置</h3>
+            <input type="url" id="contenthubUrl" placeholder="ContentHub服务器地址 (如: http://localhost:8000)" />
+          </div>
+          
+          <div class="config-section">
+            <h3>🔗 链接提取</h3>
+            <input type="url" id="extractUrl" placeholder="输入要提取的链接 (如: 小红书、推特链接)" />
+          </div>
+  
+          <div class="button-group">
+            <button id="extract" class="btn-primary">📝 提取当前页面</button>
+            <button id="extractWithOCR" class="btn-ocr">🔍 提取+OCR</button>
+          </div>
+          
+          <div class="button-group">
+            <button id="extractFromUrl" class="btn-primary">🔗 从链接提取</button>
+            <button id="extractFromUrlWithOCR" class="btn-ocr">🔗 从链接提取+OCR</button>
+          </div>
+  
+  <div class="button-group">
+    <button id="sendToContentHub" class="btn-secondary" disabled>📤 发送到ContentHub</button>
+    <button id="copyContent" class="btn-secondary" disabled>📋 复制内容</button>
+  </div>
+  
+  <div id="result"></div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

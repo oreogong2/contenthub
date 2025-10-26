@@ -54,11 +54,25 @@ export const materialApi = {
     })
   },
   
+  // 通过URL创建素材
+  createFromUrl: (data) => api.post('/materials/url', null, {
+    params: data,
+    timeout: 120000 // URL处理可能需要较长时间
+  }),
+  
   // 获取素材列表
   getList: (params) => api.get('/materials', { params }),
   
   // 获取素材详情
-  getDetail: (id) => api.get(`/materials/${id}`)
+  getDetail: (id) => api.get(`/materials/${id}`),
+  
+  // 删除素材
+  delete: (id) => api.delete(`/materials/${id}`),
+  
+  // 回收站相关
+  getRecycleBin: (params) => api.get('/recycle-bin', { params }),
+  restore: (id) => api.post(`/materials/${id}/restore`),
+  permanentDelete: (id) => api.delete(`/materials/${id}/permanent`)
 }
 
 // ========== AI 提炼 API ==========
@@ -66,11 +80,36 @@ export const materialApi = {
 export const aiApi = {
   // 提炼内容
   refine: (data) => api.post('/ai/refine', data, {
-    timeout: 60000 // AI 调用可能需要较长时间
+    timeout: 150000 // AI 调用可能需要较长时间，增加到150秒
   }),
   
   // 获取提示词列表
-  getPrompts: () => api.get('/prompts')
+  getPrompts: () => api.get('/prompts'),
+  
+  // 更新提示词列表
+  updatePrompts: (prompts) => api.put('/prompts', { prompts }),
+  
+  // 删除提示词
+  deletePrompt: (promptId) => api.delete(`/prompts/${promptId}`)
+}
+
+// ========== 标签相关 API ==========
+
+export const tagApi = {
+  // 获取所有标签
+  getList: () => api.get('/tags'),
+  
+  // 创建标签
+  create: (data) => api.post('/tags', data),
+  
+  // 更新标签
+  update: (id, data) => api.put(`/tags/${id}`, data),
+  
+  // 删除标签
+  delete: (id) => api.delete(`/tags/${id}`),
+  
+  // 批量更新素材标签
+  updateMaterialTags: (data) => api.put('/materials/tags', data)
 }
 
 // ========== 选题相关 API ==========
@@ -90,6 +129,36 @@ export const topicApi = {
   
   // 删除选题
   delete: (id) => api.delete(`/topics/${id}`)
+}
+
+// ========== 配置相关 API ==========
+export const configApi = {
+  // 获取所有配置
+  getConfigs: () => api.get('/configs'),
+  
+  // 更新配置
+  updateConfigs: (data) => api.put('/configs', data)
+}
+
+// ========== 选题灵感相关 API ==========
+export const topicInspirationApi = {
+  // 发现选题灵感
+  discoverTopics: () => api.post('/ai/discover-topics'),
+
+  // 获取选题提示词
+  getTopicPrompt: () => api.get('/ai/get-topic-prompt'),
+
+  // 设置选题提示词
+  setTopicPrompt: (prompt) => api.post('/ai/set-topic-prompt', { prompt })
+}
+
+// ========== 使用统计相关 API ==========
+export const usageStatsApi = {
+  // 获取使用统计
+  getStats: (days = 30) => api.get('/usage-stats', { params: { days } }),
+
+  // 记录使用统计
+  recordStats: (data) => api.post('/usage-stats', data)
 }
 
 export default api

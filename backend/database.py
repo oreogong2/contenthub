@@ -40,3 +40,4 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     logger.info("数据库初始化完成")
 
+

@@ -56,3 +56,4 @@ echo "📄 日志文件："
 echo "   后端: /Users/oreo/Desktop/code/contenthub/backend/backend.log"
 echo "   前端: /Users/oreo/Desktop/code/contenthub/frontend/frontend.log"
 
+

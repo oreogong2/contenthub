@@ -17,18 +17,51 @@ class MaterialCreate(BaseModel):
     title: Optional[str] = Field(None, max_length=200, description="素材标题")
     content: str = Field(..., min_length=1, description="素材内容")
     source_type: str = Field(..., description="来源类型")
+    tags: Optional[List[str]] = Field(None, description="标签列表")
 
 class MaterialResponse(BaseModel):
     """素材响应模型"""
     id: int
     title: Optional[str]
     content: str
+    content_full: Optional[str]
+    content_length: Optional[int]
     source_type: str
     file_name: Optional[str]
+    tags: Optional[List[str]]
     created_at: datetime
     
     class Config:
         from_attributes = True
+
+# ========== 标签相关模型 ==========
+
+class TagCreate(BaseModel):
+    """创建标签的请求模型"""
+    name: str = Field(..., min_length=1, max_length=20, description="标签名称")
+    color: Optional[str] = Field("#3b82f6", description="标签颜色")
+
+class TagUpdate(BaseModel):
+    """更新标签的请求模型"""
+    name: Optional[str] = Field(None, min_length=1, max_length=20, description="标签名称")
+    color: Optional[str] = Field(None, description="标签颜色")
+
+class TagResponse(BaseModel):
+    """标签响应模型"""
+    id: int
+    name: str
+    color: str
+    usage_count: int
+    is_preset: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class MaterialTagUpdate(BaseModel):
+    """更新素材标签的请求模型"""
+    material_ids: List[int] = Field(..., description="素材ID列表")
+    tags: List[str] = Field(..., description="标签列表")
 
 # ========== 选题相关模型 ==========
 
@@ -70,4 +103,5 @@ class ApiResponse(BaseModel):
     code: int = Field(200, description="状态码")
     message: str = Field("success", description="响应消息")
     data: Optional[dict] = Field(None, description="响应数据")
+
 

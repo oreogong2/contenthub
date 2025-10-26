@@ -4,16 +4,16 @@
  */
 
 import { useState, useEffect } from 'react'
-import { Card, Radio, Button, message, Alert, Input, Space, Spin } from 'antd'
+import { Card, Radio, Button, message, Alert, Input, Space, Spin, Modal } from 'antd'
 import { useNavigate } from 'react-router-dom'
-import { materialApi, aiApi } from '../api'
+import { materialApi, aiApi, configApi } from '../api'
 import useStore from '../store/useStore'
 
 const { TextArea } = Input
 
 export default function Refine() {
   const navigate = useNavigate()
-  const { currentMaterial, setRefinedContent } = useStore()
+  const { currentMaterial, batchMaterials, setRefinedContent } = useStore()
   
   const [loading, setLoading] = useState(false)
   const [prompts, setPrompts] = useState([])
@@ -23,12 +23,29 @@ export default function Refine() {
   const [editedText, setEditedText] = useState('')
   const [showResult, setShowResult] = useState(false)
   const [refineInfo, setRefineInfo] = useState(null)
+  const [aiModel, setAiModel] = useState('deepseek-chat')
 
   // 加载数据
   useEffect(() => {
     loadPrompts()
     loadMaterial()
+    loadConfig()
   }, [])
+
+  // 加载配置
+  const loadConfig = async () => {
+    try {
+      const response = await configApi.getConfigs()
+      if (response.code === 200) {
+        const configs = response.data
+        setAiModel(configs.default_ai_model || 'deepseek-chat')
+      }
+    } catch (error) {
+      console.error('加载配置失败:', error)
+      // 使用默认模型
+      setAiModel('deepseek-chat')
+    }
+  }
 
   // 加载提示词列表
   const loadPrompts = async () => {
@@ -53,10 +70,24 @@ export default function Refine() {
 
   // 加载素材
   const loadMaterial = async () => {
-    if (currentMaterial) {
+    if (batchMaterials && batchMaterials.length > 0) {
+      // 批量提炼模式
+      const combinedContent = batchMaterials.map(material => 
+        `标题: ${material.title}\n内容: ${material.content_full}`
+      ).join('\n\n---\n\n')
+      
+      setMaterial({
+        id: 'batch',
+        title: `批量提炼 (${batchMaterials.length}个素材)`,
+        content: combinedContent,
+        source_type: 'batch',
+        materials: batchMaterials
+      })
+    } else if (currentMaterial) {
+      // 单个素材模式
       setMaterial(currentMaterial)
     } else {
-      // 如果没有当前素材，提示用户
+      // 如果没有素材，提示用户
       message.warning('请先添加素材')
       setTimeout(() => {
         navigate('/')
@@ -84,14 +115,40 @@ export default function Refine() {
     try {
       console.log('开始AI提炼:', {
         material_id: material.id,
+        prompt_id: selectedPrompt.id,
         prompt_name: selectedPrompt.name
       })
 
-      // 调用AI提炼API
-      const response = await aiApi.refine({
-        material_id: material.id,
-        prompt_name: selectedPrompt.name  // 发送提示词名称
-      })
+      // 检查是否是批量提炼且内容过长
+      if (material.source_type === 'batch' && material.content.length > 50000) {
+        // 询问用户选择处理方式
+        const shouldUseSmartSplit = await showBatchProcessingOptions(material.content.length)
+        if (shouldUseSmartSplit) {
+          // 智能分割处理大量内容
+          await handleSmartBatchRefine(material, selectedPrompt)
+        } else {
+          // 尝试一次性处理（可能超时）
+          await handleSingleRefine(material, selectedPrompt)
+        }
+      } else {
+        // 正常处理
+        await handleSingleRefine(material, selectedPrompt)
+      }
+    } catch (error) {
+      console.error('AI提炼失败:', error)
+      message.error('AI提炼失败，请重试')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 单个素材提炼
+  const handleSingleRefine = async (material, selectedPrompt) => {
+    const response = await aiApi.refine({
+      material_id: material.id,
+      prompt_id: selectedPrompt.id,
+      model: aiModel
+    })
 
       console.log('AI响应:', response)
 
@@ -111,21 +168,226 @@ export default function Refine() {
         message.error(response.message || 'AI 提炼失败')
       }
 
-    } catch (error) {
-      console.error('AI提炼失败:', error)
+  }
+
+  // 显示批量处理选项对话框
+  const showBatchProcessingOptions = (contentLength) => {
+    return new Promise((resolve) => {
+      Modal.confirm({
+        title: '📊 大量内容处理方式选择',
+        content: (
+          <div style={{ marginTop: 16 }}>
+            <p style={{ color: '#d1d5db', marginBottom: 16 }}>
+              检测到内容长度：<strong>{Math.round(contentLength / 1000)}K 字符</strong>
+            </p>
+            <div style={{ marginBottom: 16 }}>
+              <h4 style={{ color: '#3b82f6', marginBottom: 8 }}>🎯 方式1：智能分割处理（推荐）</h4>
+              <ul style={{ color: '#d1d5db', paddingLeft: 20, marginBottom: 16 }}>
+                <li>✅ 保持您的提示词框架完整性</li>
+                <li>✅ 每个分块都能执行完整的多模块分析</li>
+                <li>✅ 避免超时问题，处理更稳定</li>
+                <li>⚠️ 无法进行跨分块的关联分析</li>
+              </ul>
+            </div>
+            <div>
+              <h4 style={{ color: '#f59e0b', marginBottom: 8 }}>⚡ 方式2：一次性处理</h4>
+              <ul style={{ color: '#d1d5db', paddingLeft: 20 }}>
+                <li>✅ 完全保持您的提示词框架效果</li>
+                <li>✅ 可以进行跨素材的关联分析</li>
+                <li>⚠️ 可能因内容过长而超时失败</li>
+                <li>⚠️ 处理时间较长，需要耐心等待</li>
+              </ul>
+            </div>
+          </div>
+        ),
+        okText: '智能分割处理',
+        cancelText: '一次性处理',
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+        width: 600,
+        okButtonProps: {
+          style: { background: '#3b82f6', borderColor: '#3b82f6' }
+        },
+        cancelButtonProps: {
+          style: { background: '#f59e0b', borderColor: '#f59e0b', color: 'white' }
+        }
+      })
+    })
+  }
+
+  // 智能分割处理大量内容
+  const handleSmartBatchRefine = async (material, selectedPrompt) => {
+    const content = material.content
+    const maxChunkSize = 40000 // 每个分块最大4万字符
+    
+    // 按素材边界分割内容
+    const chunks = []
+    const materials = material.materials || []
+    
+    let currentChunk = ''
+    let currentChunkMaterials = []
+    
+    for (let i = 0; i < materials.length; i++) {
+      const materialContent = `标题: ${materials[i].title}\n内容: ${materials[i].content_full}`
       
-      // 根据错误类型显示不同提示
-      const errorMsg = error.message || 'AI 提炼失败'
-      if (errorMsg.includes('API Key')) {
-        message.error('API Key 未配置，请先在设置中配置 OpenAI API Key')
-      } else if (errorMsg.includes('超时')) {
-        message.error('AI 服务超时，请稍后重试')
+      // 如果添加这个素材会超过限制，先处理当前分块
+      if (currentChunk.length + materialContent.length > maxChunkSize && currentChunk.length > 0) {
+        chunks.push({
+          content: currentChunk,
+          materials: currentChunkMaterials,
+          title: `分块 ${chunks.length + 1} (${currentChunkMaterials.length}个素材)`
+        })
+        currentChunk = materialContent
+        currentChunkMaterials = [materials[i]]
       } else {
-        message.error(errorMsg)
+        currentChunk += (currentChunk ? '\n\n---\n\n' : '') + materialContent
+        currentChunkMaterials.push(materials[i])
       }
-    } finally {
-      setLoading(false)
     }
+    
+    // 添加最后一个分块
+    if (currentChunk.length > 0) {
+      chunks.push({
+        content: currentChunk,
+        materials: currentChunkMaterials,
+        title: `分块 ${chunks.length} (${currentChunkMaterials.length}个素材)`
+      })
+    }
+    
+    message.info(`内容已智能分割为 ${chunks.length} 个分块，开始处理...`)
+    
+    const results = []
+    
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i]
+      message.info(`正在处理 ${chunk.title}...`)
+      
+      try {
+        // 为每个分块创建临时素材
+        const tempMaterial = {
+          id: `chunk_${i}`,
+          title: chunk.title,
+          content: chunk.content,
+          source_type: 'batch_chunk'
+        }
+        
+        const response = await aiApi.refine({
+          material_id: tempMaterial.id,
+          prompt_id: selectedPrompt.id,
+          model: aiModel
+        })
+        
+        if (response.code === 200) {
+          const result = response.data.refined_content || response.data.refined_text
+          results.push({
+            title: chunk.title,
+            content: result,
+            materials: chunk.materials,
+            tokens: response.data.tokens?.total_tokens || 0,
+            cost: response.data.cost || 0
+          })
+        } else {
+          results.push({
+            title: chunk.title,
+            content: `处理失败: ${response.message}`,
+            materials: chunk.materials,
+            tokens: 0,
+            cost: 0
+          })
+        }
+      } catch (error) {
+        results.push({
+          title: chunk.title,
+          content: `处理失败: ${error.message}`,
+          materials: chunk.materials,
+          tokens: 0,
+          cost: 0
+        })
+      }
+    }
+    
+    // 合并所有结果
+    const combinedResult = results.map((result, index) => 
+      `【${result.title}】\n${result.content}\n\n---\n\n`
+    ).join('')
+    
+    const totalTokens = results.reduce((sum, result) => sum + result.tokens, 0)
+    const totalCost = results.reduce((sum, result) => sum + result.cost, 0)
+    
+    setRefinedText(combinedResult)
+    setEditedText(combinedResult)
+    setRefineInfo({
+      prompt_name: selectedPrompt.name,
+      model_used: aiModel,
+      tokens_used: totalTokens,
+      cost_usd: totalCost
+    })
+    setShowResult(true)
+    message.success(`智能分割处理完成！共处理 ${chunks.length} 个分块，${materials.length} 个素材`)
+  }
+
+  // 批量素材分批提炼（保留原方法作为备选）
+  const handleBatchRefine = async (material, selectedPrompt) => {
+    const materials = material.materials || []
+    const results = []
+    
+    message.info(`开始分批处理 ${materials.length} 个素材，请耐心等待...`)
+    
+    for (let i = 0; i < materials.length; i++) {
+      const currentMaterial = materials[i]
+      message.info(`正在处理第 ${i + 1}/${materials.length} 个素材: ${currentMaterial.title}`)
+      
+      try {
+        const response = await aiApi.refine({
+          material_id: currentMaterial.id,
+          prompt_id: selectedPrompt.id,
+          model: aiModel
+        })
+        
+        if (response.code === 200) {
+          const result = response.data.refined_content || response.data.refined_text
+          results.push({
+            title: currentMaterial.title,
+            content: result,
+            tokens: response.data.tokens?.total_tokens || 0,
+            cost: response.data.cost || 0
+          })
+        } else {
+          results.push({
+            title: currentMaterial.title,
+            content: `处理失败: ${response.message}`,
+            tokens: 0,
+            cost: 0
+          })
+        }
+      } catch (error) {
+        results.push({
+          title: currentMaterial.title,
+          content: `处理失败: ${error.message}`,
+          tokens: 0,
+          cost: 0
+        })
+      }
+    }
+    
+    // 合并所有结果
+    const combinedResult = results.map((result, index) => 
+      `【${index + 1}】${result.title}\n${result.content}\n\n---\n\n`
+    ).join('')
+    
+    const totalTokens = results.reduce((sum, result) => sum + result.tokens, 0)
+    const totalCost = results.reduce((sum, result) => sum + result.cost, 0)
+    
+    setRefinedText(combinedResult)
+    setEditedText(combinedResult)
+    setRefineInfo({
+      prompt_name: selectedPrompt.name,
+      model_used: aiModel,
+      tokens_used: totalTokens,
+      cost_usd: totalCost
+    })
+    setShowResult(true)
+    message.success(`批量提炼完成！共处理 ${materials.length} 个素材`)
   }
 
   // 重新提炼

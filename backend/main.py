@@ -32,7 +32,11 @@ app = FastAPI(
 # 配置 CORS（允许前端跨域访问）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://localhost:5173",
+        "chrome-extension://*"  # 允许Chrome插件访问
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -59,13 +63,14 @@ async def health_check():
 from fastapi import Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from database import get_db
-from schemas import MaterialCreate, MaterialResponse, ApiResponse
+from schemas import MaterialCreate, MaterialResponse, ApiResponse, RefineRequest, TagCreate, TagUpdate, TagResponse, MaterialTagUpdate
 import crud
 import os
 import uuid
 from pdf_service import extract_text_from_pdf, validate_pdf_file
 from config import settings
 from ai_service import refine_content, get_default_prompts
+from image_service import process_url_for_images, cleanup_image_files
 
 @app.post("/api/materials/text", response_model=ApiResponse)
 async def create_text_material(
@@ -127,25 +132,33 @@ async def get_materials_list(
     per_page: int = 20,
     search: str = None,
     source_type: str = None,
+    tag: str = None,
     db: Session = Depends(get_db)
 ):
     """
     获取素材列表
     
-    支持分页、搜索、来源筛选
+    支持分页、搜索、来源筛选、标签筛选
     """
-    logger.info(f"获取素材列表: page={page}, per_page={per_page}, search={search}, source_type={source_type}")
+    logger.info(f"获取素材列表: page={page}, per_page={per_page}, search={search}, source_type={source_type}, tag={tag}")
     
     try:
         from models import Material
+        import json
         
-        # 构建查询
-        query = db.query(Material)
+        # 构建查询（只查询未删除的素材）
+        query = db.query(Material).filter(Material.is_deleted == 0)
         
         # 来源筛选
         if source_type:
             logger.info(f"按来源筛选: {source_type}")
             query = query.filter(Material.source_type == source_type)
+        
+        # 标签筛选
+        if tag:
+            logger.info(f"按标签筛选: {tag}")
+            # 使用JSON函数查询tags字段中包含指定标签的素材
+            query = query.filter(Material.tags.like(f'%"{tag}"%'))
         
         # 搜索
         if search:
@@ -169,6 +182,15 @@ async def get_materials_list(
         # 格式化返回数据
         materials_data = []
         for material in materials:
+            # 解析tags字段
+            tags = []
+            if material.tags:
+                try:
+                    import json
+                    tags = json.loads(material.tags)
+                except:
+                    tags = []
+            
             materials_data.append({
                 "id": material.id,
                 "title": material.title or "无标题",
@@ -177,6 +199,7 @@ async def get_materials_list(
                 "content_length": len(material.content),
                 "source_type": material.source_type,
                 "file_name": material.file_name,
+                "tags": tags,
                 "created_at": material.created_at.isoformat()
             })
         
@@ -232,6 +255,35 @@ async def get_material(
         raise
     except Exception as e:
         logger.error(f"获取素材失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.delete("/api/materials/{material_id}", response_model=ApiResponse)
+async def delete_material(
+    material_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    删除素材
+    """
+    logger.info(f"删除素材: id={material_id}")
+    
+    try:
+        material = crud.get_material(db, material_id)
+        if not material:
+            raise HTTPException(status_code=404, detail="素材不存在")
+        
+        crud.delete_material(db, material_id)
+        
+        return ApiResponse(
+            code=200,
+            message="success",
+            data={"deleted_id": material_id}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除素材失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
 @app.post("/api/materials/pdf", response_model=ApiResponse)
@@ -328,14 +380,88 @@ async def upload_pdf_material(
         logger.error(f"上传 PDF 失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
+@app.post("/api/materials/url", response_model=ApiResponse)
+async def create_url_material(
+    url: str,
+    source_type: str = None,
+    title: str = None,
+    db: Session = Depends(get_db)
+):
+    """
+    通过URL创建素材
+    
+    支持从网页或图片URL提取文字内容
+    """
+    logger.info(f"处理URL素材: {url}")
+    
+    try:
+        # 1. 验证URL
+        if not url or not url.strip():
+            logger.warning("URL为空")
+            raise HTTPException(status_code=400, detail="URL不能为空")
+        
+        url = url.strip()
+        
+        # 2. 验证URL格式
+        if not url.startswith(('http://', 'https://')):
+            logger.warning(f"URL格式错误: {url}")
+            raise HTTPException(status_code=400, detail="URL格式错误，必须以http://或https://开头")
+        
+        # 3. 处理URL，提取图片和文字
+        try:
+            result = process_url_for_images(url)
+            logger.info(f"URL处理成功: 找到{len(result['images'])}个图片")
+            
+        except Exception as e:
+            logger.error(f"URL处理失败: {e}")
+            raise HTTPException(status_code=400, detail=f"处理URL失败: {str(e)}")
+        
+        # 4. 检查是否提取到文字
+        if not result['total_text'] or result['total_text'].strip() == "":
+            logger.warning("未提取到任何文字内容")
+            raise HTTPException(status_code=400, detail="未从图片中提取到文字内容")
+        
+        # 5. 准备数据
+        material_data = {
+            "title": title or f"来自{result['source_type']}的素材",
+            "content": result['total_text'],
+            "source_type": source_type or result['source_type']
+        }
+        
+        # 6. 保存到数据库
+        db_material = crud.create_material(db, material_data)
+        
+        logger.info(f"URL素材创建成功: id={db_material.id}")
+        
+        # 7. 清理临时文件（可选，也可以保留用于后续处理）
+        # cleanup_image_files([img['file_path'] for img in result['images']])
+        
+        # 8. 返回成功响应
+        return ApiResponse(
+            code=200,
+            message="URL素材创建成功",
+            data={
+                "id": db_material.id,
+                "title": db_material.title,
+                "source_type": db_material.source_type,
+                "content_length": len(db_material.content),
+                "images_count": len(result['images']),
+                "original_url": url,
+                "created_at": db_material.created_at.isoformat()
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"创建URL素材失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
 # ========== AI 提炼接口 ==========
 
 @app.post("/api/ai/refine", response_model=ApiResponse)
 async def refine_material(
-    material_id: int,
-    prompt_id: int,
-    model: str = "gpt-3.5-turbo",
-    api_key: str = None,
+    request: RefineRequest,
     db: Session = Depends(get_db)
 ):
     """
@@ -343,21 +469,35 @@ async def refine_material(
     
     使用 AI 根据选择的提示词提炼素材内容
     """
-    logger.info(f"AI 提炼: material_id={material_id}, prompt_id={prompt_id}, model={model}")
+    logger.info(f"AI 提炼: material_id={request.material_id}, prompt_id={request.prompt_id}, model={request.model}")
     
     try:
         # 1. 获取素材
-        material = crud.get_material(db, material_id)
+        material = crud.get_material(db, request.material_id)
         if not material:
-            logger.warning(f"素材不存在: id={material_id}")
+            logger.warning(f"素材不存在: id={request.material_id}")
             raise HTTPException(status_code=404, detail="素材不存在")
         
         # 2. 获取提示词
-        prompts = get_default_prompts()
-        prompt_obj = next((p for p in prompts if p['id'] == prompt_id), None)
+        prompts = []
+        try:
+            # 尝试从数据库配置获取提示词
+            config = crud.get_config(db, "default_prompts")
+            if config and config.value:
+                prompts = json.loads(config.value)
+                logger.info(f"从数据库获取提示词: {len(prompts)} 个")
+            else:
+                prompts = get_default_prompts()
+                logger.info(f"使用默认提示词: {len(prompts)} 个")
+        except Exception as e:
+            logger.warning(f"从数据库获取提示词失败: {e}")
+            prompts = get_default_prompts()
+            logger.info(f"使用默认提示词: {len(prompts)} 个")
+        
+        prompt_obj = next((p for p in prompts if p['id'] == request.prompt_id), None)
         
         if not prompt_obj:
-            logger.warning(f"提示词不存在: id={prompt_id}")
+            logger.warning(f"提示词不存在: id={request.prompt_id}")
             raise HTTPException(status_code=404, detail="提示词不存在")
         
         logger.info(f"使用提示词: {prompt_obj['name']}")
@@ -367,13 +507,28 @@ async def refine_material(
             result = refine_content(
                 content=material.content,
                 prompt=prompt_obj['content'],
-                model=model,
-                api_key=api_key
+                model=request.model,
+                api_key=None
             )
             
             logger.info(f"AI 提炼成功: tokens={result['tokens_used']}, cost=${result['cost_usd']}")
             
-            # 4. 返回结果
+            # 4. 记录使用统计
+            try:
+                from datetime import datetime
+                crud.create_or_update_usage_stats(
+                    db=db,
+                    date=datetime.now().strftime('%Y-%m-%d'),
+                    model=result['model_used'],
+                    requests=1,
+                    tokens=result['tokens_used'],
+                    cost=result['cost_usd']
+                )
+                logger.info("使用统计记录成功")
+            except Exception as e:
+                logger.warning(f"记录使用统计失败: {e}")
+            
+            # 5. 返回结果
             return ApiResponse(
                 code=200,
                 message="提炼完成",
@@ -383,7 +538,7 @@ async def refine_material(
                     "model_used": result['model_used'],
                     "tokens_used": result['tokens_used'],
                     "cost_usd": result['cost_usd'],
-                    "material_id": material_id
+                    "material_id": request.material_id
                 }
             )
             
@@ -411,21 +566,318 @@ async def refine_material(
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
 @app.get("/api/prompts", response_model=ApiResponse)
-async def get_prompts():
+async def get_prompts(db: Session = Depends(get_db)):
     """
     获取所有提示词
     """
     logger.info("获取提示词列表")
     
     try:
+        # 尝试从数据库配置获取提示词
+        try:
+            config = crud.get_config(db, "default_prompts")
+            if config and config.value:
+                prompts = json.loads(config.value)
+                logger.info(f"从数据库获取提示词: {len(prompts)} 个")
+                return ApiResponse(
+                    code=200,
+                    message="success",
+                    data={"prompts": prompts}
+                )
+        except Exception as e:
+            logger.warning(f"从数据库获取提示词失败: {e}")
+        
+        # 如果数据库没有配置，使用默认提示词
         prompts = get_default_prompts()
+        logger.info(f"使用默认提示词: {len(prompts)} 个")
         return ApiResponse(
             code=200,
             message="success",
-            data={"prompts": prompts}  # 包装成字典
+            data={"prompts": prompts}
         )
     except Exception as e:
         logger.error(f"获取提示词失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.post("/api/ai/discover-topics", response_model=ApiResponse)
+async def discover_topics(
+    db: Session = Depends(get_db)
+):
+    """
+    发现选题灵感 - 分析素材库内容并推荐选题
+    """
+    logger.info("开始发现选题灵感")
+    
+    try:
+        # 获取所有素材
+        materials = crud.get_all_materials(db)
+        if not materials:
+            return ApiResponse(
+                code=200,
+                message="success",
+                data={"topics": [], "message": "素材库为空，请先添加一些素材"}
+            )
+        
+        # 提取素材内容进行分析
+        all_content = []
+        for material in materials:
+            content = f"标题: {material.title}\n内容: {material.content[:500]}"
+            all_content.append(content)
+        
+        combined_content = "\n\n".join(all_content)
+        
+        # 使用AI分析并生成选题建议
+        from ai_service import discover_topic_ideas
+        
+        # 尝试获取自定义选题提示词
+        custom_prompt = None
+        try:
+            config = crud.get_config(db, "topic_inspiration_prompt")
+            if config and config.value:
+                custom_prompt = config.value
+                logger.info("使用自定义选题提示词")
+        except Exception as e:
+            logger.warning(f"获取自定义选题提示词失败: {e}")
+        
+        topic_ideas = await discover_topic_ideas(combined_content, custom_prompt)
+        
+        return ApiResponse(
+            code=200,
+            message="success",
+            data={"topics": topic_ideas}
+        )
+        
+    except Exception as e:
+        logger.error(f"发现选题灵感失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.post("/api/ai/set-topic-prompt", response_model=ApiResponse)
+async def set_topic_prompt(
+    request: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    设置选题灵感提示词
+    """
+    logger.info("设置选题灵感提示词")
+    
+    try:
+        prompt = request.get('prompt', '').strip()
+        if not prompt:
+            raise HTTPException(status_code=400, detail="提示词不能为空")
+        
+        # 保存到数据库配置
+        crud.create_or_update_config(db, "topic_inspiration_prompt", prompt)
+        
+        return ApiResponse(
+            code=200,
+            message="选题提示词设置成功",
+            data={"prompt": prompt}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"设置选题提示词失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.get("/api/ai/get-topic-prompt", response_model=ApiResponse)
+async def get_topic_prompt(db: Session = Depends(get_db)):
+    """
+    获取选题灵感提示词
+    """
+    logger.info("获取选题灵感提示词")
+    
+    try:
+        config = crud.get_config(db, "topic_inspiration_prompt")
+        prompt = config.value if config and config.value else ""
+        
+        return ApiResponse(
+            code=200,
+            message="success",
+            data={"prompt": prompt}
+        )
+        
+    except Exception as e:
+        logger.error(f"获取选题提示词失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.put("/api/prompts", response_model=ApiResponse)
+async def update_prompts(
+    request: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    更新提示词列表
+    """
+    logger.info("更新提示词列表")
+    
+    try:
+        prompts = request.get('prompts', [])
+        if not isinstance(prompts, list):
+            raise HTTPException(status_code=400, detail="提示词格式错误")
+        
+        # 保存到数据库配置
+        crud.create_or_update_config(db, "default_prompts", json.dumps(prompts))
+        
+        return ApiResponse(
+            code=200,
+            message="提示词更新成功",
+            data={"prompts": prompts}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新提示词失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.delete("/api/prompts/{prompt_id}", response_model=ApiResponse)
+async def delete_prompt(
+    prompt_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    删除指定提示词
+    """
+    logger.info(f"删除提示词: id={prompt_id}")
+    
+    try:
+        # 获取当前提示词列表
+        config = crud.get_config(db, "default_prompts")
+        if not config or not config.value:
+            prompts = get_default_prompts()
+        else:
+            prompts = json.loads(config.value)
+        
+        # 查找并删除指定提示词
+        original_count = len(prompts)
+        prompts = [p for p in prompts if p.get('id') != prompt_id]
+        
+        if len(prompts) == original_count:
+            raise HTTPException(status_code=404, detail="提示词不存在")
+        
+        # 保存更新后的提示词列表
+        crud.create_or_update_config(db, "default_prompts", json.dumps(prompts))
+        
+        return ApiResponse(
+            code=200,
+            message="提示词删除成功",
+            data={"deleted_id": prompt_id}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除提示词失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+# ========== 标签管理接口 ==========
+
+@app.get("/api/tags", response_model=ApiResponse)
+async def get_tags(db: Session = Depends(get_db)):
+    """
+    获取所有标签
+    """
+    logger.info("获取标签列表")
+    
+    try:
+        tags = crud.get_all_tags(db)
+        tag_list = []
+        
+        for tag in tags:
+            tag_list.append({
+                "id": tag.id,
+                "name": tag.name,
+                "color": tag.color,
+                "usage_count": tag.usage_count,
+                "is_preset": bool(tag.is_preset),
+                "created_at": tag.created_at
+            })
+        
+        return ApiResponse(
+            code=200,
+            message="success",
+            data={"tags": tag_list}
+        )
+        
+    except Exception as e:
+        logger.error(f"获取标签失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.post("/api/tags", response_model=ApiResponse)
+async def create_tag(
+    tag_data: TagCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    创建新标签
+    """
+    logger.info(f"创建标签: name={tag_data.name}")
+    
+    try:
+        # 检查标签是否已存在
+        existing_tag = crud.get_tag_by_name(db, tag_data.name)
+        if existing_tag:
+            return ApiResponse(
+                code=400,
+                message="标签已存在",
+                data=None
+            )
+        
+        # 创建新标签
+        tag = crud.create_tag(db, tag_data.name, tag_data.color)
+        
+        return ApiResponse(
+            code=200,
+            message="success",
+            data={
+                "id": tag.id,
+                "name": tag.name,
+                "color": tag.color,
+                "usage_count": tag.usage_count,
+                "is_preset": bool(tag.is_preset),
+                "created_at": tag.created_at
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"创建标签失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.put("/api/materials/tags", response_model=ApiResponse)
+async def update_material_tags(
+    update_data: MaterialTagUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    批量更新素材标签
+    """
+    logger.info(f"更新素材标签: material_ids={update_data.material_ids}, tags={update_data.tags}")
+    
+    try:
+        import json
+        
+        # 更新每个素材的标签
+        for material_id in update_data.material_ids:
+            material = crud.get_material(db, material_id)
+            if material:
+                # 更新素材标签
+                material.tags = json.dumps(update_data.tags, ensure_ascii=False)
+                db.commit()
+                
+                # 更新标签使用次数
+                for tag_name in update_data.tags:
+                    crud.update_tag_usage_count(db, tag_name)
+        
+        return ApiResponse(
+            code=200,
+            message="success",
+            data={"updated_count": len(update_data.material_ids)}
+        )
+        
+    except Exception as e:
+        logger.error(f"更新素材标签失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
 # ========== 选题管理接口 ==========
@@ -857,6 +1309,188 @@ async def update_configs(
     except Exception as e:
         logger.error(f"更新配置失败: {e}", exc_info=True)
         db.rollback()
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+# ========== 使用统计接口 ==========
+
+@app.get("/api/usage-stats", response_model=ApiResponse)
+async def get_usage_stats(
+    days: int = 30,
+    db: Session = Depends(get_db)
+):
+    """
+    获取使用统计
+    """
+    logger.info(f"获取使用统计: 最近{days}天")
+    
+    try:
+        summary = crud.get_usage_stats_summary(db, days)
+        
+        return ApiResponse(
+            code=200,
+            message="success",
+            data=summary
+        )
+        
+    except Exception as e:
+        logger.error(f"获取使用统计失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.post("/api/usage-stats", response_model=ApiResponse)
+async def record_usage_stats(
+    request: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    记录使用统计
+    """
+    logger.info("记录使用统计")
+    
+    try:
+        from datetime import datetime
+        
+        date = request.get('date', datetime.now().strftime('%Y-%m-%d'))
+        model = request.get('model', 'unknown')
+        requests = request.get('requests', 1)
+        tokens = request.get('tokens', 0)
+        cost = request.get('cost', 0.0)
+        
+        crud.create_or_update_usage_stats(db, date, model, requests, tokens, cost)
+        
+        return ApiResponse(
+            code=200,
+            message="使用统计记录成功",
+            data={"date": date, "model": model}
+        )
+        
+    except Exception as e:
+        logger.error(f"记录使用统计失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+# ========== 回收站接口 ==========
+
+@app.get("/api/recycle-bin", response_model=ApiResponse)
+async def get_recycle_bin_materials(
+    page: int = 1,
+    per_page: int = 20,
+    db: Session = Depends(get_db)
+):
+    """
+    获取回收站中的素材
+    """
+    logger.info(f"获取回收站素材: page={page}, per_page={per_page}")
+    
+    try:
+        from models import Material
+        import json
+        
+        # 查询已删除的素材
+        query = db.query(Material).filter(Material.is_deleted == 1)
+        
+        # 按删除时间倒序排列
+        query = query.order_by(Material.deleted_at.desc())
+        
+        # 统计总数
+        total = query.count()
+        
+        # 分页
+        offset = (page - 1) * per_page
+        materials = query.offset(offset).limit(per_page).all()
+        
+        # 格式化返回数据
+        materials_data = []
+        for material in materials:
+            # 解析tags字段
+            tags = []
+            if material.tags:
+                try:
+                    tags = json.loads(material.tags)
+                except:
+                    tags = []
+            
+            materials_data.append({
+                "id": material.id,
+                "title": material.title,
+                "content": material.content[:200] + "..." if len(material.content) > 200 else material.content,
+                "content_full": material.content_full or material.content,
+                "content_length": material.content_length or len(material.content),
+                "source_type": material.source_type,
+                "file_name": material.file_name,
+                "tags": tags,
+                "created_at": material.created_at.isoformat(),
+                "updated_at": material.updated_at.isoformat() if material.updated_at else None,
+                "deleted_at": material.deleted_at.isoformat() if material.deleted_at else None
+            })
+        
+        logger.info(f"回收站查询成功: 共 {total} 条，返回 {len(materials_data)} 条")
+        
+        return ApiResponse(
+            code=200,
+            message="success",
+            data={
+                "materials": materials_data,
+                "total": total,
+                "page": page,
+                "per_page": per_page
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"获取回收站素材失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.post("/api/materials/{material_id}/restore", response_model=ApiResponse)
+async def restore_material(
+    material_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    恢复素材
+    """
+    logger.info(f"恢复素材: id={material_id}")
+    
+    try:
+        material = crud.restore_material(db, material_id)
+        if material:
+            return ApiResponse(
+                code=200,
+                message="素材恢复成功",
+                data={"material_id": material_id}
+            )
+        else:
+            raise HTTPException(status_code=404, detail="素材不存在")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"恢复素材失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+@app.delete("/api/materials/{material_id}/permanent", response_model=ApiResponse)
+async def permanent_delete_material(
+    material_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    永久删除素材
+    """
+    logger.info(f"永久删除素材: id={material_id}")
+    
+    try:
+        material = crud.permanent_delete_material(db, material_id)
+        if material:
+            return ApiResponse(
+                code=200,
+                message="素材已永久删除",
+                data={"material_id": material_id}
+            )
+        else:
+            raise HTTPException(status_code=404, detail="素材不存在")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"永久删除素材失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
 if __name__ == "__main__":
