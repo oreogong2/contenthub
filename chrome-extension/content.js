@@ -1,15 +1,17 @@
 // ContentHub Chrome插件 - Content Script
-console.log('ContentHub插件已加载');
+console.log('🎉 ContentHub 插件 v1.2.0 已加载');
 
 // 监听来自popup的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'extractContent') {
+    console.log('📥 收到提取请求, useOCR:', request.useOCR);
     extractContent(request.useOCR)
       .then(result => {
+        console.log('✅ 提取成功:', result);
         sendResponse({ success: true, data: result });
       })
       .catch(error => {
-        console.error('提取失败:', error);
+        console.error('❌ 提取失败:', error);
         sendResponse({ success: false, error: error.message });
       });
     return true; // 保持消息通道开放
@@ -18,9 +20,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // 提取页面内容
 async function extractContent(useOCR = false) {
+  const platform = detectPlatform();
+  console.log('🔍 检测到平台:', platform);
+
   const result = {
     url: window.location.href,
-    platform: detectPlatform(),
+    platform: platform,
     originalText: '',
     images: [],
     ocrResults: [],
@@ -29,27 +34,39 @@ async function extractContent(useOCR = false) {
 
   try {
     // 提取文本内容
+    console.log('📝 开始提取文本...');
     result.originalText = extractTextContent();
-    
+    console.log('📝 提取到文本:', result.originalText.substring(0, 100) + (result.originalText.length > 100 ? '...' : ''));
+
     // 提取图片
+    console.log('🖼️ 开始提取图片...');
     result.images = extractImages();
-    
+    console.log(`🖼️ 提取到 ${result.images.length} 张图片`);
+
     // 如果需要OCR
     if (useOCR && result.images.length > 0) {
+      console.log('🔤 开始OCR识别...');
       result.ocrResults = await performOCR(result.images);
+      console.log(`🔤 OCR完成，识别了 ${result.ocrResults.length} 张图片`);
     }
-    
+
     // 合并所有文本
     const allTexts = [result.originalText];
     if (result.ocrResults) {
       allTexts.push(...result.ocrResults.map(r => r.text).filter(t => t));
     }
     result.combinedText = allTexts.filter(t => t).join('\n\n');
-    
-    console.log('提取结果:', result);
+
+    console.log('✅ 最终提取结果:', {
+      platform: result.platform,
+      textLength: result.originalText.length,
+      imageCount: result.images.length,
+      ocrCount: result.ocrResults.length
+    });
+
     return result;
   } catch (error) {
-    console.error('提取失败:', error);
+    console.error('❌ 提取过程出错:', error);
     throw error;
   }
 }

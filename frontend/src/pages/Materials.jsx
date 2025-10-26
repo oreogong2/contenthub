@@ -414,41 +414,59 @@ export default function Materials() {
       return
     }
 
+    console.log('🗑️ 开始批量删除，选中ID:', selectedIds)
     setDeleting(true)
 
     try {
       // 逐个删除选中的素材
-      const deletePromises = selectedIds.map(id => materialApi.delete(id))
+      const deletePromises = selectedIds.map(id => {
+        console.log('删除素材 ID:', id)
+        return materialApi.delete(id)
+      })
+
       const results = await Promise.allSettled(deletePromises)
 
-      // 检查删除结果（注意：响应拦截器已经返回了 response.data，所以是 result.value.code）
-      const successCount = results.filter(result =>
-        result.status === 'fulfilled' && result.value?.code === 200
-      ).length
+      // 调试：打印所有结果
+      console.log('删除结果:', results)
+      results.forEach((result, index) => {
+        console.log(`结果 ${index}:`, {
+          status: result.status,
+          value: result.value,
+          reason: result.reason
+        })
+      })
 
+      // 检查删除结果
+      const successResults = results.filter(result => {
+        if (result.status === 'fulfilled') {
+          console.log('成功结果value:', result.value)
+          // 响应拦截器返回 response.data，所以直接检查 code
+          return result.value && result.value.code === 200
+        }
+        return false
+      })
+
+      const successCount = successResults.length
       const failedCount = selectedIds.length - successCount
 
+      console.log(`✅ 成功: ${successCount}, ❌ 失败: ${failedCount}`)
+
       if (successCount > 0) {
-        // 从列表中移除成功删除的素材
-        setMaterials(materials.filter(m => !selectedIds.includes(m.id)))
-        setTotal(total - successCount)
+        message.success(`成功删除 ${successCount} 个素材${failedCount > 0 ? `，${failedCount} 个失败` : ''}`)
+
+        // 清空选中状态
         setSelectedIds([])
 
-        if (failedCount === 0) {
-          message.success(`成功删除 ${successCount} 个素材`)
-        } else {
-          message.warning(`成功删除 ${successCount} 个素材，${failedCount} 个删除失败`)
-        }
-
-        // 刷新列表以确保数据同步
+        // 刷新列表
         await loadMaterials()
       } else {
         message.error('删除失败，请重试')
+        console.error('所有删除都失败了')
       }
 
     } catch (error) {
-      console.error('批量删除失败:', error)
-      message.error('删除失败，请重试')
+      console.error('❌ 批量删除异常:', error)
+      message.error('删除失败：' + error.message)
     } finally {
       setDeleting(false)
     }
