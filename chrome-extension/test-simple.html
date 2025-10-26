@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { 
+      width: 400px; 
+      padding: 20px; 
+      font-family: Arial, sans-serif;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      cursor: pointer;
+    }
+    #result {
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      background: #f9f9f9;
+    }
+  </style>
+</head>
+<body>
+  <h3>ContentHub 插件测试</h3>
+  
+  <div>
+    <input type="url" id="contenthubUrl" placeholder="ContentHub地址" value="http://localhost:8000" style="width: 100%; padding: 5px; margin-bottom: 10px;">
+  </div>
+  
+  <div>
+    <button id="testExtract">测试提取</button>
+    <button id="testSend">测试发送</button>
+  </div>
+  
+  <div id="result"></div>
+  
+  <script>
+    document.getElementById('testExtract').addEventListener('click', async () => {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        
+        // 直接注入简单的提取函数
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          function: () => {
+            return {
+              url: window.location.href,
+              title: document.title,
+              text: document.body.innerText.substring(0, 200) + '...',
+              images: Array.from(document.querySelectorAll('img')).slice(0, 3).map(img => img.src)
+            };
+          }
+        });
+        
+        if (results && results[0]) {
+          document.getElementById('result').innerHTML = `
+            <h4>提取成功！</h4>
+            <p><strong>URL:</strong> ${results[0].result.url}</p>
+            <p><strong>标题:</strong> ${results[0].result.title}</p>
+            <p><strong>文本:</strong> ${results[0].result.text}</p>
+            <p><strong>图片:</strong> ${results[0].result.images.length} 张</p>
+          `;
+        }
+      } catch (error) {
+        document.getElementById('result').innerHTML = `<p style="color: red;">错误: ${error.message}</p>`;
+      }
+    });
+    
+    document.getElementById('testSend').addEventListener('click', async () => {
+      try {
+        const contenthubUrl = document.getElementById('contenthubUrl').value;
+        
+        const response = await fetch(`${contenthubUrl}/api/materials/text`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            title: '插件测试素材',
+            content: '这是一个测试素材，用于验证插件功能是否正常。',
+            source_type: 'other',
+            source_url: window.location.href
+          })
+        });
+        
+        if (response.ok) {
+          document.getElementById('result').innerHTML = '<p style="color: green;">✅ 发送成功！</p>';
+        } else {
+          document.getElementById('result').innerHTML = `<p style="color: red;">❌ 发送失败: ${response.status}</p>`;
+        }
+      } catch (error) {
+        document.getElementById('result').innerHTML = `<p style="color: red;">❌ 错误: ${error.message}</p>`;
+      }
+    });
+  </script>
+</body>
+</html>

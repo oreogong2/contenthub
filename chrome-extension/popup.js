@@ -59,7 +59,7 @@ class ContentHubExtractor {
       // 如果content script通信失败，直接注入代码
       const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        function: this.extractPageContentFunction,
+        function: extractPageContentFunction,
         args: [useOCR]
       });
 
@@ -451,6 +451,17 @@ function extractImages() {
   }
   
   return images;
+}
+
+// 简化的OCR函数（用于直接注入）
+function performOCRFunction(images) {
+  // 简化版OCR，实际项目中需要集成Tesseract.js或调用后端API
+  return images.map((img, index) => ({
+    index: index + 1,
+    url: img.url,
+    text: `图片${index + 1}中的文字内容（需要OCR处理）`,
+    success: true
+  }));
 }
 
 // 初始化
