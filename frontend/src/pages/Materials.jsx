@@ -415,34 +415,37 @@ export default function Materials() {
     }
 
     setDeleting(true)
-    
+
     try {
       // 逐个删除选中的素材
       const deletePromises = selectedIds.map(id => materialApi.delete(id))
       const results = await Promise.allSettled(deletePromises)
-      
-      // 检查删除结果
-      const successCount = results.filter(result => 
-        result.status === 'fulfilled' && result.value.data.code === 200
+
+      // 检查删除结果（注意：响应拦截器已经返回了 response.data，所以是 result.value.code）
+      const successCount = results.filter(result =>
+        result.status === 'fulfilled' && result.value?.code === 200
       ).length
-      
+
       const failedCount = selectedIds.length - successCount
-      
+
       if (successCount > 0) {
         // 从列表中移除成功删除的素材
         setMaterials(materials.filter(m => !selectedIds.includes(m.id)))
         setTotal(total - successCount)
         setSelectedIds([])
-        
+
         if (failedCount === 0) {
           message.success(`成功删除 ${successCount} 个素材`)
         } else {
           message.warning(`成功删除 ${successCount} 个素材，${failedCount} 个删除失败`)
         }
+
+        // 刷新列表以确保数据同步
+        await loadMaterials()
       } else {
         message.error('删除失败，请重试')
       }
-      
+
     } catch (error) {
       console.error('批量删除失败:', error)
       message.error('删除失败，请重试')
