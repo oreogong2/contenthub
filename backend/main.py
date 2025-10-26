@@ -30,17 +30,38 @@ app = FastAPI(
 )
 
 # 配置 CORS（允许前端跨域访问）
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000", 
-        "http://localhost:5173",
-        "chrome-extension://*"  # 允许Chrome插件访问
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# 注意：Chrome 扩展 ID 可以在 chrome://extensions/ 中查看
+# 开发环境可以使用通配符，生产环境必须指定具体的扩展 ID
+import os
+
+CHROME_EXTENSION_ID = os.getenv('CHROME_EXTENSION_ID', '*')  # 从环境变量读取
+
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+]
+
+# 开发环境允许所有Chrome扩展，生产环境只允许指定ID
+if CHROME_EXTENSION_ID == '*':
+    # 开发模式：允许所有扩展（仅用于开发）
+    logger.warning("⚠️  CORS配置使用通配符，仅供开发使用！")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"chrome-extension://.*",
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization"],
+    )
+else:
+    # 生产模式：只允许指定的扩展ID
+    allowed_origins.append(f"chrome-extension://{CHROME_EXTENSION_ID}")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization"],
+    )
 
 @app.get("/")
 async def root():
@@ -158,16 +179,20 @@ async def get_materials_list(
         # 标签筛选
         if tag:
             logger.info(f"按标签筛选: {tag}")
+            # 转义特殊字符防止SQL注入
+            tag_escaped = tag.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_').replace('"', '\\"')
             # 使用JSON函数查询tags字段中包含指定标签的素材
-            query = query.filter(Material.tags.like(f'%"{tag}"%'))
-        
+            query = query.filter(Material.tags.like(f'%"{tag_escaped}"%', escape='\\'))
+
         # 搜索
         if search:
             logger.info(f"搜索关键词: {search}")
-            search_pattern = f"%{search}%"
+            # 转义特殊字符防止SQL注入
+            search_escaped = search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+            search_pattern = f"%{search_escaped}%"
             query = query.filter(
-                (Material.title.like(search_pattern)) | 
-                (Material.content.like(search_pattern))
+                (Material.title.like(search_pattern, escape='\\')) |
+                (Material.content.like(search_pattern, escape='\\'))
             )
         
         # 按创建时间倒序排列
@@ -296,70 +321,74 @@ async def upload_pdf_material(
 ):
     """
     上传 PDF 素材
-    
+
     上传 PDF 文件，自动提取文本内容并保存
+    包含完整的安全验证：文件名净化、MIME 类型验证、PDF 结构验证
     """
     logger.info(f"上传 PDF: filename={file.filename}, source={source_type}")
-    
+
     try:
-        # 1. 验证文件格式
-        if not file.filename.lower().endswith('.pdf'):
-            logger.warning(f"文件格式错误: {file.filename}")
-            raise HTTPException(status_code=400, detail="仅支持 PDF 格式文件")
-        
-        # 2. 读取文件内容并检查大小
+        from file_security import validate_upload_file, FileValidationError
+
+        # 1. 读取文件内容
         file_content = await file.read()
-        file_size = len(file_content)
-        file_size_mb = file_size / (1024 * 1024)
-        
-        logger.info(f"文件大小: {file_size_mb:.2f} MB")
-        
-        if file_size_mb > settings.MAX_FILE_SIZE / (1024 * 1024):
-            logger.warning(f"文件过大: {file_size_mb:.2f} MB")
-            raise HTTPException(status_code=400, detail=f"文件过大，最大支持 50MB")
-        
+
+        # 2. 完整的安全验证
+        try:
+            safe_filename, file_size_mb = validate_upload_file(
+                filename=file.filename,
+                file_content=file_content,
+                max_size_mb=50,
+                allowed_extensions={'.pdf'}
+            )
+        except FileValidationError as e:
+            logger.warning(f"文件验证失败: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
+
+        logger.info(f"文件验证通过: {safe_filename} ({file_size_mb:.2f}MB)")
+
         # 3. 确保 uploads 目录存在
         os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-        
-        # 4. 生成唯一文件名
-        file_ext = os.path.splitext(file.filename)[1]
+
+        # 4. 生成唯一文件名（保持扩展名）
+        file_ext = os.path.splitext(safe_filename)[1]
         unique_filename = f"{uuid.uuid4()}{file_ext}"
         file_path = os.path.join(settings.UPLOAD_DIR, unique_filename)
-        
+
         # 5. 保存文件
         with open(file_path, "wb") as f:
             f.write(file_content)
-        
+
         logger.info(f"文件已保存: {file_path}")
-        
+
         # 6. 提取 PDF 文本
         try:
             extracted_text = extract_text_from_pdf(file_path)
             word_count = len(extracted_text)
             logger.info(f"PDF 文本提取成功: {word_count} 字")
-            
+
         except Exception as e:
             # 如果提取失败，删除上传的文件
             if os.path.exists(file_path):
                 os.remove(file_path)
             logger.error(f"PDF 文本提取失败: {e}")
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"PDF 解析失败: {str(e)}。请确保上传的是文本版 PDF（非扫描版）"
             )
-        
+
         # 7. 保存到数据库
         material_data = {
-            "title": title or file.filename,
+            "title": title or safe_filename,
             "content": extracted_text,
             "source_type": source_type,
-            "file_name": file.filename
+            "file_name": safe_filename  # 使用净化后的文件名
         }
-        
+
         db_material = crud.create_material(db, material_data)
-        
+
         logger.info(f"PDF 素材创建成功: id={db_material.id}")
-        
+
         # 8. 返回成功响应
         return ApiResponse(
             code=200,
@@ -374,7 +403,7 @@ async def upload_pdf_material(
                 "created_at": db_material.created_at.isoformat()
             }
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1172,10 +1201,12 @@ async def get_topics(
         # 搜索
         if search:
             logger.info(f"搜索关键词: {search}")
-            search_pattern = f"%{search}%"
+            # 转义特殊字符防止SQL注入
+            search_escaped = search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+            search_pattern = f"%{search_escaped}%"
             query = query.filter(
-                (Topic.title.like(search_pattern)) | 
-                (Topic.refined_content.like(search_pattern))
+                (Topic.title.like(search_pattern, escape='\\')) |
+                (Topic.refined_content.like(search_pattern, escape='\\'))
             )
         
         # 按创建时间倒序排列
@@ -1226,21 +1257,38 @@ async def get_topics(
 @app.get("/api/configs", response_model=ApiResponse)
 async def get_configs(db: Session = Depends(get_db)):
     """
-    获取所有配置
+    获取所有配置（API 密钥将被脱敏处理）
     """
     logger.info("获取配置信息")
-    
+
     try:
         from models import Config
-        
+
+        # 需要脱敏的配置项
+        API_KEY_FIELDS = {
+            'openai_api_key',
+            'deepseek_api_key',
+            'claude_api_key',
+            'anthropic_api_key',
+            'gemini_api_key'
+        }
+
         # 查询所有配置
         configs = db.query(Config).all()
-        
+
         # 格式化返回数据
         config_dict = {}
         for config in configs:
-            config_dict[config.key] = config.value
-        
+            # 对 API 密钥进行脱敏处理
+            if config.key in API_KEY_FIELDS and config.value:
+                # 显示前缀提示用户已设置，但不泄露实际内容
+                if len(config.value) > 10:
+                    config_dict[config.key] = f"{'*' * 8}...已设置"
+                else:
+                    config_dict[config.key] = "已设置"
+            else:
+                config_dict[config.key] = config.value
+
         # 如果没有配置，返回默认值
         if not config_dict:
             config_dict = {
@@ -1252,15 +1300,15 @@ async def get_configs(db: Session = Depends(get_db)):
                     "创业故事", "个人成长", "情感励志"
                 ], ensure_ascii=False)
             }
-        
+
         logger.info(f"配置获取成功: {len(config_dict)} 项")
-        
+
         return ApiResponse(
             code=200,
             message="success",
             data=config_dict
         )
-        
+
     except Exception as e:
         logger.error(f"获取配置失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="服务器内部错误")
@@ -1272,41 +1320,64 @@ async def update_configs(
 ):
     """
     更新配置
-    
-    批量更新配置项
+
+    批量更新配置项（自动加密 API 密钥）
     """
     logger.info(f"更新配置: {list(configs.keys())}")
-    
+
     try:
         from models import Config
         from datetime import datetime
-        
+        from crypto_utils import encrypt_api_key
+
+        # 需要加密的配置项
+        API_KEY_FIELDS = {
+            'openai_api_key',
+            'deepseek_api_key',
+            'claude_api_key',
+            'anthropic_api_key',
+            'gemini_api_key'
+        }
+
         # 遍历配置项并更新
         for key, value in configs.items():
             # 查询配置是否存在
             config = db.query(Config).filter(Config.key == key).first()
-            
+
+            # 如果是 API 密钥，则加密存储
+            if key in API_KEY_FIELDS and value:
+                try:
+                    encrypted_value = encrypt_api_key(value)
+                    logger.info(f"已加密 API 密钥: {key}")
+                    store_value = encrypted_value
+                except Exception as e:
+                    logger.error(f"加密 API 密钥失败: {key}, {e}")
+                    # 如果加密失败，仍然存储原始值（向后兼容）
+                    store_value = value
+            else:
+                store_value = value
+
             if config:
                 # 更新现有配置
-                config.value = value
+                config.value = store_value
                 config.updated_at = datetime.now()
                 logger.info(f"更新配置: {key}")
             else:
                 # 创建新配置
-                config = Config(key=key, value=value)
+                config = Config(key=key, value=store_value)
                 db.add(config)
                 logger.info(f"创建配置: {key}")
-        
+
         db.commit()
-        
+
         logger.info(f"配置更新成功: {len(configs)} 项")
-        
+
         return ApiResponse(
             code=200,
             message="配置更新成功",
             data=configs
         )
-        
+
     except Exception as e:
         logger.error(f"更新配置失败: {e}", exc_info=True)
         db.rollback()

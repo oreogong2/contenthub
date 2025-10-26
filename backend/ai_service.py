@@ -83,10 +83,12 @@ def _call_openai(content: str, prompt: str, model: str, api_key: str = None):
             try:
                 from database import get_db
                 from crud import get_config
+                from crypto_utils import decrypt_api_key
                 db = next(get_db())
                 config = get_config(db, "openai_api_key")
                 if config and config.value:
-                    api_key = config.value
+                    # 解密 API 密钥
+                    api_key = decrypt_api_key(config.value)
             except Exception as e:
                 logger.warning(f"从数据库获取OpenAI API Key失败: {e}")
     

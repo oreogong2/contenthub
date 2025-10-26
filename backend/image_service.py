@@ -23,21 +23,35 @@ logger = logging.getLogger(__name__)
 def download_image_from_url(url: str, timeout: int = 30) -> str:
     """
     从URL下载图片到本地
-    
+
+    包含完整的安全验证：域名白名单、SSRF 防护、私有 IP 过滤
+
     参数:
         url (str): 图片URL
         timeout (int): 下载超时时间（秒）
-    
+
     返回:
         str: 本地图片文件路径
-    
+
     异常:
         Exception: 当下载失败时
     """
     logger.info(f"开始下载图片: {url}")
-    
+
     try:
-        # 设置请求头，模拟浏览器
+        from url_security import validate_image_url, sanitize_url, URLSecurityError
+
+        # 1. URL 净化
+        url = sanitize_url(url)
+
+        # 2. URL 安全验证（域名白名单 + SSRF 防护）
+        try:
+            validate_image_url(url, check_dns=True)
+        except URLSecurityError as e:
+            logger.error(f"URL 安全验证失败: {e}")
+            raise Exception(f"URL 安全验证失败: {e}")
+
+        # 3. 设置请求头，模拟浏览器
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
@@ -46,8 +60,8 @@ def download_image_from_url(url: str, timeout: int = 30) -> str:
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
         }
-        
-        # 下载图片
+
+        # 4. 下载图片
         response = requests.get(url, headers=headers, timeout=timeout, stream=True)
         response.raise_for_status()
         
